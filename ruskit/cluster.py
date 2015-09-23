@@ -3,7 +3,11 @@ import itertools
 import redis
 import socket
 import time
-import urlparse
+
+try:
+    import urlparse
+except ImportError:
+    import urllib.parse as urlparse
 
 from .utils import echo, divide
 
