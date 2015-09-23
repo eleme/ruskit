@@ -1,7 +1,8 @@
 import time
 
+from ruskit import cli
 from ..cluster import ClusterNode, Cluster
-from ..utils import echo, Command
+from ..utils import echo
 
 
 # nodes = [
@@ -12,10 +13,6 @@ from ..utils import echo, Command
 #     }
 # ]
 def add_nodes(cluster, nodes):
-    if not cluster.healthy():
-        echo("Cluster not healthy.")
-        exit()
-
     for node in nodes:
         cluster.add_node(node)
 
@@ -24,11 +21,7 @@ def add_nodes(cluster, nodes):
         echo('.', end='')
         time.sleep(1)
     echo()
-
-    echo("Resharding...")
-    cluster.reshard()
-
-    cluster.wait(verbose=True)
+    cluster.wait()
 
 
 def format_nodes(nodes):
@@ -47,14 +40,15 @@ def format_nodes(nodes):
     return data
 
 
-@Command.command
-@Command.argument("cluster")
-@Command.argument("nodes", nargs='+')
-def add(args):
+@cli.command
+@cli.argument("cluster")
+@cli.argument("nodes", nargs='+')
+@cli.pass_ctx
+def add(ctx, args):
     nodes = format_nodes(args.nodes)
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+
+    if not cluster.healthy():
+        ctx.abort("Cluster not healthy.")
+
     add_nodes(cluster, nodes)
-    dis = ["{}:{}: {}".format(n.host, n.port, len(n.slots))
-           for n in cluster.masters]
-    echo("Slots distribution:")
-    echo("\n".join(dis))

@@ -1,10 +1,8 @@
-from ..utils import CommandParser
+from ..cli import CommandParser
 
 from .add import add
-from .delete import delete
 from .create import create
-from .migrate import migrate
-from .manage import info, fix
+from .manage import info, fix, migrate, delete, reshard, replicate, destroy
 
 
 def main():
@@ -15,6 +13,9 @@ def main():
     parser.add_command(migrate)
     parser.add_command(info)
     parser.add_command(fix)
+    parser.add_command(reshard)
+    parser.add_command(replicate)
+    parser.add_command(destroy)
 
     parser.run()
 

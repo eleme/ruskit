@@ -1,6 +1,5 @@
 from __future__ import print_function
 
-import argparse
 import itertools
 import os
 import sys
@@ -34,7 +33,9 @@ def echo(*values, **kwargs):
     sys.stdout.flush()
 
 
-def divide_number(n, m):
+def divide(n, m):
+    """Divide integer n to m chunks
+    """
     avg = int(n / m)
     remain = n - m * avg
     data = list(itertools.repeat(avg, m))
@@ -46,47 +47,23 @@ def divide_number(n, m):
     return data
 
 
-class Command(object):
-    def __init__(self, args, func):
-        self.arguments = args
-        self.name = func.__name__
-        self.callback = func
+def spread(nodes, n):
+    """Distrubute master instances in different nodes
 
-    @classmethod
-    def command(cls, func):
-        if not hasattr(func, "__cmd_args__"):
-            func.__cmd_args__ = []
-        func.__cmd_args__.reverse()
-        return cls(func.__cmd_args__, func)
+    {
+        "192.168.0.1": [node1, node2],
+        "192.168.0.2": [node3, node4],
+        "192.168.0.3": [node5, node6]
+    } => [node1, node3, node5]
+    """
+    target = []
 
-    @classmethod
-    def argument(cls, *args, **kwargs):
-        def deco(func):
-            if not hasattr(func, "__cmd_args__"):
-                func.__cmd_args__ = []
-            func.__cmd_args__.append((args, kwargs))
-            return func
-        return deco
-
-    def __call__(self):
-        parser = argparse.ArgumentParser()
-        for args, kwargs in self.arguments:
-            parser.add_argument(*args, **kwargs)
-        args = parser.parse_args()
-        self.callback(args)
-
-
-class CommandParser(object):
-    def __init__(self, *args, **kwargs):
-        self.parser = argparse.ArgumentParser(*args, **kwargs)
-        self.subparser = self.parser.add_subparsers()
-
-    def add_command(self, command):
-        parser = self.subparser.add_parser(command.name)
-        for args, kwargs in command.arguments:
-            parser.add_argument(*args, **kwargs)
-        parser.set_defaults(func=command.callback)
-
-    def run(self):
-        args = self.parser.parse_args()
-        args.func(args)
+    while len(target) < n and nodes:
+        for ip, node_group in list(nodes.items()):
+            if not node_group:
+                nodes.pop(ip)
+                continue
+            target.append(node_group.pop(0))
+            if len(target) >= n:
+                break
+    return target

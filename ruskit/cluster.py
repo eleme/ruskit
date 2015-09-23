@@ -1,12 +1,11 @@
 import hashlib
 import itertools
 import redis
-import math
 import socket
 import time
 import urlparse
 
-from .utils import echo, divide_number
+from .utils import echo, divide
 
 CLUSTER_HASH_SLOTS = 16384
 
@@ -26,6 +25,14 @@ class NodeNotFound(Exception):
 
     def __str__(self):
         return "Node '{}' not found.".format(self.node_id)
+
+
+class ClusterNotHealthy(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __str__(self):
+        return self.msg
 
 
 class ClusterNode(object):
@@ -81,6 +88,14 @@ class ClusterNode(object):
         return self.r.execute_command("MIGRATE", host, port, key,
                                       destination_db, timeout, *args)
 
+    def reset(self, hard=False, soft=False):
+        args = []
+        if hard:
+            args = ["HARD"]
+        if soft:
+            args = ["SOFT"]
+        return self.r.execute_command("CLUSTER RESET", *args)
+
     def setslot(self, action, slot, node_id=None):
         remain = [node_id] if node_id else []
         return self.r.execute_command("CLUSTER SETSLOT", slot, action, *remain)
@@ -92,7 +107,8 @@ class ClusterNode(object):
         return self.r.execute_command("CLUSTER COUNTKEYSINSLOT", slot)
 
     def slaves(self, node_id):
-        return self.r.execute_command("CLUSTER SLAVES", node_id)
+        data = self.r.execute_command("CLUSTER SLAVES", node_id)
+        return self._parse_node('\n'.join(data))
 
     def addslots(self, *slot):
         if not slot:
@@ -123,9 +139,24 @@ class ClusterNode(object):
         return self.r.execute_command("CLUSTER FAILOVER", *args)
 
     def nodes(self):
-        data = []
         info = self.r.execute_command("CLUSTER NODES").strip()
-        for item in info.split('\n'):
+        return self._parse_node(info)
+
+    def cluster_info(self):
+        data = {}
+        info = self.r.execute_command("CLUSTER INFO").strip()
+        for item in info.split("\r\n"):
+            k, v = item.split(':')
+            if k != "cluster_state":
+                v = int(v)
+            data[k] = v
+        return data
+
+    def _parse_node(self, nodes):
+        data = []
+        for item in nodes.split('\n'):
+            if not item:
+                continue
             confs = item.split()
             node_info = {
                 "name": confs[0],
@@ -159,16 +190,6 @@ class ClusterNode(object):
                 data.append(node_info)
         return data
 
-    def cluster_info(self):
-        data = {}
-        info = self.r.execute_command("CLUSTER INFO").strip()
-        for item in info.split("\r\n"):
-            k, v = item.split(':')
-            if k != "cluster_state":
-                v = int(v)
-            data[k] = v
-        return data
-
 
 class Cluster(object):
     def __init__(self, nodes):
@@ -176,7 +197,8 @@ class Cluster(object):
 
     @classmethod
     def from_node(cls, node):
-        nodes = [ClusterNode.from_uri(i["addr"]) for i in node.nodes()]
+        nodes = [ClusterNode.from_uri(i["addr"]) for i in node.nodes()
+                 if i["link_status"] != "disconnected"]
         return cls(nodes)
 
     @property
@@ -202,19 +224,40 @@ class Cluster(object):
         slots = list(itertools.chain(*[i.slots for i in self.nodes]))
         return len(slots) == CLUSTER_HASH_SLOTS and self.consistent()
 
-    def wait(self, verbose=False):
+    def wait(self):
         while not self.consistent():
-            echo('.', end='', disable=verbose)
             time.sleep(1)
-        echo(disable=verbose)
 
         if not self.healthy():
-            echo("Error: missing slots", disable=verbose)
+            raise ClusterNotHealthy("Error: missing slots")
 
     def get_node(self, node_id):
         for i in self.nodes:
             if i.name == node_id:
                 return i
+
+    def fix_open_slots(self):
+        for master in self.masters:
+            self.fix_node(master)
+
+    def fix_node(self, node):
+        info = node.node_info
+
+        for slot, target_id in info["migrating"].items():
+            target = self.get_node(target_id)
+            if not target or slot not in target.node_info["importing"]:
+                node.setslot("STABLE", slot)
+                continue
+
+            self.migrate_slot(node, target, slot)
+
+        for slot, target_id in info["importing"].items():
+            src = self.get_node(target_id)
+            if not src or slot not in src.node_info["migrating"]:
+                node.setslot("STABLE", slot)
+                continue
+
+            self.migrate_slot(src, node, slot)
 
     def reshard(self):
         if not self.consistent():
@@ -230,15 +273,15 @@ class Cluster(object):
 
         for n in nodes:
             if not n["need"]:
-                break
+                continue
             for src, count in n["need"]:
                 self.migrate(src, n["node"], count)
 
     def delete_node(self, node):
-        self.nodes = [n for n in self.nodes if n.name != node.name]
         if node.is_master():
             self.migrate_node(node)
 
+        self.nodes = [n for n in self.nodes if n.name != node.name]
         masters = self.masters
         masters.sort(key=lambda x: len(x.slaves(x.name)))
 
@@ -247,12 +290,8 @@ class Cluster(object):
                 n.replicate(masters[0].name)
             n.forget(node.name)
 
-        if node.is_slave():
-            node.failover(takeover=True)
-        node.delslots(*node.slots)
-
-        for n in self.nodes:
-            node.forget(n.name)
+        assert not node.slots
+        node.reset()
 
     def add_node(self, node):
         """Add a node to cluster.
@@ -265,26 +304,27 @@ class Cluster(object):
         new.meet(cluster_member.host, cluster_member.port)
         self.nodes.append(new)
 
-        if node["role"] == "slave":
-            if "master" in node:
-                target = self.get_node(node["master"])
-                if not target:
-                    raise NodeNotFound(node["master"])
-            else:
-                masters = sorted(self.masters,
-                                 key=lambda x: len(x.slaves(x.name)))
-                target = masters[0]
+        self.wait()
 
-            while not self.consistent():
-                time.sleep(1)
-            new.replicate(target.name)
+        if node["role"] != "slave":
+            return
+
+        if "master" in node:
+            target = self.get_node(node["master"])
+            if not target:
+                raise NodeNotFound(node["master"])
+        else:
+            masters = sorted(self.masters, key=lambda x: len(x.slaves(x.name)))
+            target = masters[0]
+
+        new.replicate(target.name)
 
     def fill_slots(self):
         masters = self.masters
         slots = itertools.chain(*[n.slots for n in masters])
         missing = list(set(range(CLUSTER_HASH_SLOTS)).difference(slots))
 
-        div = divide_number(len(missing), len(masters))
+        div = divide(len(missing), len(masters))
         masters.sort(key=lambda x: len(x.slots))
 
         i = 0
@@ -292,12 +332,23 @@ class Cluster(object):
             node.addslots(*missing[i:count + i])
             i += count
 
-    def migrate_node(self, src_node):
+    def migrate_node(self, src_node, count=None, income=False):
         nodes = [n for n in self.masters if n.name != src_node.name]
-        slots = divide_number(len(src_node.slots), len(nodes))
-        nodes.sort(key=lambda x: len(x.slots), reverse=True)
+        slot_count = len(src_node.slots)
+        if count is None or count > slot_count:
+            count = slot_count
+
+        if count <= 0:
+            return
+        slots = divide(count, len(nodes))
+        assert sum(slots) == slot_count
+
+        reverse = True if income else False
+        nodes.sort(key=lambda x: len(x.slots), reverse=reverse)
+
         for node, count in zip(nodes, slots):
-            self.migrate(src_node, node, count)
+            src, dst = (node, src_node) if income else (src_node, node)
+            self.migrate(src, dst, count)
 
     def migrate_slot(self, src, dst, slot, timeout=15000, verbose=True):
         dst.setslot("IMPORTING", slot, src.name)
@@ -311,6 +362,9 @@ class Cluster(object):
             node.setslot("NODE", slot, dst.name)
 
     def migrate(self, src, dst, count):
+        if count <= 0:
+            return
+
         slots = src.slots
         slots_count = len(slots)
         if count > slots_count:
@@ -324,37 +378,39 @@ class Cluster(object):
 
 
 def slot_balance(seq, amt):
-    avg = float(amt) / float(len(seq))
-    seq.sort(key=lambda x: x["count"])
+    seq.sort(key=lambda x: x["count"], reverse=True)
+    chunks = divide(amt, len(seq))
+    pairs = list(zip(seq, chunks))
 
-    lower, higher = map(int, (math.floor(avg), math.ceil(avg)))
-    i, j = 0, len(seq) - 1
+    i, j = 0, len(pairs) - 1
     while i < j:
-        begin, end = seq[i], seq[j]
-
-        need, more = lower - begin["count"], end["count"] - higher
-        if not need:
+        m, count = pairs[i]
+        more = m["count"] - count
+        if more <= 0:
             i += 1
-        if not more:
-            j -= 1
+            continue
 
-        if not need or not more:
+        n, count = pairs[j]
+        need = count - n["count"]
+        if need <= 0:
+            j -= 1
             continue
 
         if need < more:
-            begin["need"].append((end["node"], need))
-            begin["count"] += need
-            end["count"] -= need
-            i += 1
+            n["need"].append((m["node"], need))
+            n["count"] += need
+            m["count"] -= need
+            j -= 1
         elif need > more:
-            begin["need"].append((end["node"], more))
-            begin["count"] += more
-            end["count"] -= more
-            j -= 1
-        else:
-            begin["need"].append((end["node"], need))
-            begin["count"] += need
-            end["count"] -= more
+            n["need"].append((m["node"], more))
+            n["count"] += more
+            m["count"] -= more
             i += 1
+        else:
+            n["need"].append((m["node"], need))
+            n["count"] += need
+            m["count"] -= more
             j -= 1
+            i += 1
+
     return seq

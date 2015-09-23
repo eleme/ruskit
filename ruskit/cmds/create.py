@@ -2,21 +2,19 @@ import collections
 import time
 import sys
 
+from ruskit import cli
 from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster
-from ..utils import echo, Command
+from ..utils import echo, spread, divide
 
 
-def split_slot(start, end, step):
-    _int = lambda x: int(round(x))
+def split_slot(n, m):
+    chunks = divide(n, m)
 
-    chunks = []
-    while start < end:
-        stop = start + step - 1
-        if stop >= end:
-            stop = end - 1
-        chunks.append((_int(start), _int(stop) + 1))
-        start += step
-    return chunks
+    res, total = [], 0
+    for c in chunks:
+        res.append((total, c + total))
+        total += c
+    return res
 
 
 class NodeWrapper(object):
@@ -39,18 +37,22 @@ class NodeWrapper(object):
         for chunk in self.unassigned_slots:
             self.addslots(*range(*chunk))
 
+    def active(self):
+        return bool(self.unassigned_slots or self.unassigned_master)
+
 
 class Manager(object):
-    def __init__(self, slave_count, instances):
+    def __init__(self, slave_count, instances, master_count=0):
         assert slave_count >= 0
 
         self.slave_count = slave_count
         instances = [ClusterNode.from_uri(i) for i in instances]
 
-        self.cluster = Cluster(instances)
         self.instances = [NodeWrapper(i) for i in instances]
 
-        self.master_count = len(self.instances) / (slave_count + 1)
+        if not master_count:
+            master_count = len(self.instances) / (slave_count + 1)
+        self.master_count = master_count
         assert self.master_count >= 3, \
             "Redis Cluster requires at least 3 master nodes"
 
@@ -70,39 +72,37 @@ class Manager(object):
         for instance in self.instances:
             ips[instance.host].append(instance)
 
-        mixed_nodes = []
-        stop = False
-        while not stop:
-            for ip, nodes in ips.items():
-                if not nodes:
-                    stop = True
-                    continue
-                mixed_nodes.append(nodes.pop(0))
+        self.masters = masters = spread(ips, self.master_count)
 
-        self.masters = masters = mixed_nodes[0:self.master_count]
-        slaves = mixed_nodes[self.master_count:]
-        self.slaves = slaves[:]
-
-        step = float(CLUSTER_HASH_SLOTS) / float(self.master_count)
-        chunks = split_slot(0, CLUSTER_HASH_SLOTS, step)
+        chunks = split_slot(CLUSTER_HASH_SLOTS, self.master_count)
         for master, chunk in zip(masters, chunks):
             master.unassigned_slots.append(chunk)
 
-        while slaves:
-            for master in masters:
-                assigned_slaves = 0
-                while assigned_slaves < self.slave_count and slaves:
-                    node = None
-                    for slave in slaves:
-                        if slave.host != master.host:
-                            node = slave
-                            break
-                    if not node:
-                        node = slaves.pop(0)
-                    else:
-                        slaves.remove(node)
-                    node.unassigned_master = master.name
-                    assigned_slaves += 1
+        slaves = spread(ips, sum(len(i) for i in ips.values()))
+
+        self.slaves = slaves[:] if self.slave_count > 0 else []
+
+        while slaves and self.slave_count > 0:
+            self.distribute_slaves(masters, slaves)
+
+        self.instances = [i for i in self.instances if i.active()]
+        self.cluster = Cluster(self.instances)
+
+    def distribute_slaves(self, masters, slaves):
+        for master in masters:
+            assigned_slaves = 0
+            while assigned_slaves < self.slave_count and slaves:
+                node = None
+                for slave in slaves:
+                    if slave.host != master.host:
+                        node = slave
+                        break
+                if not node:
+                    node = slaves.pop(0)
+                else:
+                    slaves.remove(node)
+                node.unassigned_master = master.name
+                assigned_slaves += 1
 
     def show_cluster_info(self):
         for instance in self.instances:
@@ -116,7 +116,7 @@ class Manager(object):
             if instance.unassigned_master:
                 echo("   replicates:", instance.unassigned_master)
             else:
-                slot_msg = ','.join(['-'.join(str(i) for i in s)
+                slot_msg = ','.join(['-'.join([str(s[0]), str(s[1] - 1)])
                                      for s in instance.unassigned_slots])
                 echo("   slots:", slot_msg)
 
@@ -129,6 +129,9 @@ class Manager(object):
             slave.assign_master()
 
     def join_cluster(self):
+        if not self.instances:
+            return
+
         first_instance = self.instances[0]
         for instance in self.instances[1:]:
             instance.meet(first_instance.host, first_instance.port)
@@ -143,13 +146,12 @@ class Manager(object):
             epoch += 1
 
 
-@Command.command
-@Command.argument("-r", "--replicate", type=int, default=0)
-@Command.argument("instances", nargs='+')
+@cli.command
+@cli.argument("-s", "--slaves", type=int, default=0)
+@cli.argument("-m", "--masters", type=int, default=0)
+@cli.argument("instances", nargs='+')
 def create(args):
-    slaves, instances = args.replicate, args.instances
-
-    manager = Manager(slaves, instances)
+    manager = Manager(args.slaves, args.instances, args.masters)
     if not manager.check():
         echo("Cluster can not be created.\n", color="red")
         echo("To be a cluster member:")
