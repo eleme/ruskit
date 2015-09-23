@@ -3,15 +3,12 @@
 
 from setuptools import setup, find_packages
 
-with open("README.md") as f:
-    long_description = f.read()
-
 
 setup(
     name="ruskit",
     version="0.0.1",
     description="Redis cluster administration toolkit",
-    long_description=long_description,
+    long_description=open("README.md").read(),
     url="https://github.com/eleme/ruskit",
     author="maralla",
     author_email="imaralla@icloud.com",
