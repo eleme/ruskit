@@ -1,5 +1,8 @@
 # Ruskit
 
+[![Build Status](https://travis-ci.org/eleme/ruskit.svg?branch=master)](https://travis-ci.org/eleme/ruskit)
+[![Version](https://img.shields.io/pypi/v/ruskit.svg)](https://pypi.python.org/pypi/ruskit)
+
 Redis cluster administration toolkit.
 
 ## Usage
