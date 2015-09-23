@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ruskit",
-    version="0.0.2",
+    version="0.0.3",
     description="Redis cluster administration toolkit",
     long_description=open("README.md").read(),
     url="https://github.com/eleme/ruskit",

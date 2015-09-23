@@ -341,7 +341,6 @@ class Cluster(object):
         if count <= 0:
             return
         slots = divide(count, len(nodes))
-        assert sum(slots) == slot_count
 
         reverse = True if income else False
         nodes.sort(key=lambda x: len(x.slots), reverse=reverse)
