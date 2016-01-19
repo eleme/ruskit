@@ -24,7 +24,6 @@ def info(args):
     random_node = cluster.nodes[0]
     connection_pool = random_node.r.connection_pool
     connection = connection_pool._available_connections[0]
-    echo('Connection: %s' % connection.__repr__())
     echo('Exception Classes:')
     pprint.pprint(connection._parser.EXCEPTION_CLASSES)
 
