@@ -3,6 +3,7 @@ import itertools
 import redis
 import socket
 import time
+import logging
 
 try:
     import urlparse
@@ -12,6 +13,8 @@ except ImportError:
 from .utils import echo, divide
 
 CLUSTER_HASH_SLOTS = 16384
+
+logger = logging.getLogger(__name__)
 
 
 def _scan_keys(node, slot, count=10):
@@ -23,7 +26,11 @@ def _scan_keys(node, slot, count=10):
             yield key
 
 
-class NodeNotFound(Exception):
+class RuskitException(Exception):
+    pass
+
+
+class NodeNotFound(RuskitException):
     def __init__(self, node_id):
         self.node_id = node_id
 
@@ -31,19 +38,17 @@ class NodeNotFound(Exception):
         return "Node '{}' not found.".format(self.node_id)
 
 
-class ClusterNotHealthy(Exception):
-    def __init__(self, msg):
-        self.msg = msg
-
-    def __str__(self):
-        return self.msg
+class ClusterNotHealthy(RuskitException):
+    pass
 
 
 class ClusterNode(object):
-    def __init__(self, host, port):
+    def __init__(self, host, port, socket_timeout=1, retry=10):
         self.host = socket.gethostbyname(host)
         self.port = port
-        self.r = redis.Redis(host, port)
+        self.retry = retry
+        self.r = redis.Redis(host, port, socket_timeout=socket_timeout)
+        self.r.ping()
 
     @classmethod
     def from_uri(cls, uri):
@@ -57,6 +62,19 @@ class ClusterNode(object):
 
     def __getattr__(self, attr):
         return getattr(self.r, attr)
+
+    def execute_command(self, *args, **kwargs):
+        i = 0
+        while True:
+            try:
+                self.r.execute_command(*args, **kwargs)
+                break
+            except redis.RedisError:
+                if i > self.retry:
+                    raise
+                i += 1
+                logger.warn("retry %d times", i)
+                time.sleep(1)
 
     def is_slave(self, master_id=None):
         info = self.node_info
@@ -89,8 +107,8 @@ class ClusterNode(object):
             args = ["COPY"]
         if replace:
             args = ["REPLACE"]
-        return self.r.execute_command("MIGRATE", host, port, key,
-                                      destination_db, timeout, *args)
+        return self.execute_command("MIGRATE", host, port, key,
+                                    destination_db, timeout, *args)
 
     def reset(self, hard=False, soft=False):
         args = []
@@ -98,57 +116,57 @@ class ClusterNode(object):
             args = ["HARD"]
         if soft:
             args = ["SOFT"]
-        return self.r.execute_command("CLUSTER RESET", *args)
+        return self.execute_command("CLUSTER RESET", *args)
 
     def setslot(self, action, slot, node_id=None):
         remain = [node_id] if node_id else []
-        return self.r.execute_command("CLUSTER SETSLOT", slot, action, *remain)
+        return self.execute_command("CLUSTER SETSLOT", slot, action, *remain)
 
     def getkeysinslot(self, slot, count):
-        return self.r.execute_command("CLUSTER GETKEYSINSLOT", slot, count)
+        return self.execute_command("CLUSTER GETKEYSINSLOT", slot, count)
 
     def countkeysinslot(self, slot):
-        return self.r.execute_command("CLUSTER COUNTKEYSINSLOT", slot)
+        return self.execute_command("CLUSTER COUNTKEYSINSLOT", slot)
 
     def slaves(self, node_id):
-        data = self.r.execute_command("CLUSTER SLAVES", node_id)
+        data = self.execute_command("CLUSTER SLAVES", node_id)
         return self._parse_node('\n'.join(data))
 
     def addslots(self, *slot):
         if not slot:
             return
 
-        self.r.execute_command("CLUSTER ADDSLOTS", *slot)
+        self.execute_command("CLUSTER ADDSLOTS", *slot)
 
     def delslots(self, *slot):
         if not slot:
             return
 
-        self.r.execute_command("CLUSTER DELSLOTS", *slot)
+        self.execute_command("CLUSTER DELSLOTS", *slot)
 
     def forget(self, node_id):
-        return self.r.execute_command("CLUSTER FORGET", node_id)
+        return self.execute_command("CLUSTER FORGET", node_id)
 
     def set_config_epoch(self, config_epoch):
-        return self.r.execute_command("CLUSTER SET-CONFIG-EPOCH", config_epoch)
+        return self.execute_command("CLUSTER SET-CONFIG-EPOCH", config_epoch)
 
     def meet(self, ip, port):
-        return self.r.execute_command("CLUSTER MEET", ip, port)
+        return self.execute_command("CLUSTER MEET", ip, port)
 
     def replicate(self, node_id):
-        return self.r.execute_command("CLUSTER REPLICATE", node_id)
+        return self.execute_command("CLUSTER REPLICATE", node_id)
 
     def failover(self, force=False, takeover=False):
         args = ["FORCE"] if force else ["TAKEOVER"]
-        return self.r.execute_command("CLUSTER FAILOVER", *args)
+        return self.execute_command("CLUSTER FAILOVER", *args)
 
     def nodes(self):
-        info = self.r.execute_command("CLUSTER NODES").strip()
+        info = self.execute_command("CLUSTER NODES").strip()
         return self._parse_node(info)
 
     def cluster_info(self):
         data = {}
-        info = self.r.execute_command("CLUSTER INFO").strip()
+        info = self.execute_command("CLUSTER INFO").strip()
         for item in info.split("\r\n"):
             k, v = item.split(':')
             if k != "cluster_state":
@@ -364,7 +382,7 @@ class Cluster(object):
         for node in self.nodes:
             node.setslot("NODE", slot, dst.name)
 
-    def migrate(self, src, dst, count):
+    def migrate(self, src, dst, count, verbose=True):
         if count <= 0:
             return
 
@@ -377,7 +395,7 @@ class Cluster(object):
         keys.sort(key=lambda x: x[1])
 
         for slot, _ in keys[:count]:
-            self.migrate_slot(src, dst, slot)
+            self.migrate_slot(src, dst, slot, verbose=verbose)
 
 
 def slot_balance(seq, amt):

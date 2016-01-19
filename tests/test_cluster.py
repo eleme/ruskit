@@ -1,6 +1,7 @@
 import mock
+import redis
 
-from ruskit.cluster import Cluster
+from ruskit.cluster import Cluster, ClusterNode
 
 
 class MockNode(object):
@@ -62,3 +63,20 @@ def test_migrate_node_with_income():
         mock.call(node1, node2, 1)
     ]
     mock_migrate.assert_has_calls(calls)
+
+
+def test_retry(monkeypatch):
+    monkeypatch.setattr(redis.Redis, "ping", mock.Mock())
+    times = [0]
+
+    def execute(*args, **kwargs):
+        times[0] += 1
+        if times[0] < 4:
+            raise redis.RedisError('Err: connection timeout')
+
+    monkeypatch.setattr(redis.Redis, "execute_command", execute)
+
+    node = ClusterNode("localhost", 8000, retry=3)
+    node.setslot('NODE', 844, 'abcd')
+
+    assert times[0] == 4
