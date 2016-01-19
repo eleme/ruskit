@@ -1,4 +1,5 @@
 import redis
+import pprint
 
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
@@ -19,6 +20,13 @@ def info(args):
     echo("Masters:", len(cluster.masters))
     echo("Instances:", len(cluster.nodes))
     echo("Slots:", sum(len(n.slots) for n in cluster.masters))
+
+    random_node = cluster.nodes[0]
+    connection_pool = random_node.r.connection_pool
+    connection = connection_pool._available_connections[0]
+    echo('Connection: %s' % connection.__repr__())
+    echo('Exception Classes:')
+    pprint.pprint(connection._parser.EXCEPTION_CLASSES)
 
 
 @cli.command
