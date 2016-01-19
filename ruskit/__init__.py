@@ -11,6 +11,7 @@ REDIS_CUSTOM_EXCEPTION_CLASSES = {
     'ASK': AskError,
     'MOVED': MovedError,
     'CLUSTERDOWN': ClusterDownError,
+    # we should add exists error from BaseParser which is ConnectionError
     'ERR': {'max number of clients reached': ConnectionError,
             'Unknown node': UnknownNodeError},
 }

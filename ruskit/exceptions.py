@@ -51,6 +51,5 @@ class UnknownNodeError(ResponseError):
 
     def __init__(self, resp):
         self.node_id = resp
-
-    def __unicode__(self):
-        return self.node_id
+        self.message = 'Node {} is no longer exists on the cluster'.format(
+            self.node_id)
