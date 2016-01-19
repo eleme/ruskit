@@ -67,8 +67,7 @@ class ClusterNode(object):
         i = 0
         while True:
             try:
-                self.r.execute_command(*args, **kwargs)
-                break
+                return self.r.execute_command(*args, **kwargs)
             except redis.RedisError:
                 if i > self.retry:
                     raise
