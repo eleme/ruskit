@@ -1,6 +1,8 @@
 import collections
-import time
+import itertools
 import sys
+import time
+import uuid
 
 from ruskit import cli
 from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster
@@ -21,6 +23,7 @@ class NodeWrapper(object):
     def __init__(self, node):
         self.node = node
 
+        self.origin = None
         self.unassigned_slots = []
         self.unassigned_master = None
 
@@ -39,6 +42,9 @@ class NodeWrapper(object):
 
     def active(self):
         return bool(self.unassigned_slots or self.unassigned_master)
+
+    def __repr__(self):
+        return '{}:{}'.format(self.node.host, self.node.port)
 
 
 class Manager(object):
@@ -82,27 +88,57 @@ class Manager(object):
 
         self.slaves = slaves[:] if self.slave_count > 0 else []
 
-        while slaves and self.slave_count > 0:
-            self.distribute_slaves(masters, slaves)
+        if self.slave_count > 0:
+            plan = self.distribute_slaves(masters, slaves)
+            for m, s in plan:
+                if s.origin:
+                    s.host = s.origin
+                s.unassigned_master = m.name
 
         self.instances = [i for i in self.instances if i.active()]
         self.cluster = Cluster(self.instances)
 
     def distribute_slaves(self, masters, slaves):
-        for master in masters:
-            assigned_slaves = 0
-            while assigned_slaves < self.slave_count and slaves:
+        tracks = []
+
+        def _tracked(master, slave, p):
+            if not p:
+                return False
+            target = p[:]
+            target.append((master, slave))
+            return target in tracks
+
+        while True:
+            plan = []
+            current_slaves = slaves[:]
+            for master in masters:
                 node = None
-                for slave in slaves:
-                    if slave.host != master.host:
-                        node = slave
-                        break
-                if not node:
-                    node = slaves.pop(0)
-                else:
-                    slaves.remove(node)
-                node.unassigned_master = master.name
-                assigned_slaves += 1
+                if not current_slaves:
+                    break
+
+                for s in current_slaves:
+                    if s.host == master.host or _tracked(master, s, plan):
+                        continue
+                    node = s
+                    plan.append((master, s))
+                    current_slaves.remove(s)
+                    break
+                if node is None:
+                    nodes = [s for s in current_slaves
+                             if s.host == master.host]
+                    nodes[0].origin = nodes[0].host
+                    nodes[0].host += str(uuid.uuid4())[:6]
+
+            if len(plan) == min(len(slaves), len(masters)):
+                break
+            if plan:
+                tracks.append(plan)
+
+        more = set(slaves).difference([s for _, s in plan])
+
+        if more:
+            plan.extend(self.distribute_slaves(masters, list(more)))
+        return plan
 
     def show_cluster_info(self):
         for instance in self.instances:
