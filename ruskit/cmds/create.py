@@ -1,5 +1,4 @@
 import collections
-import itertools
 import sys
 import time
 import uuid
@@ -57,7 +56,7 @@ class Manager(object):
         self.instances = [NodeWrapper(i) for i in instances]
 
         if not master_count:
-            master_count = len(self.instances) / (slave_count + 1)
+            master_count = int(len(self.instances) / (slave_count + 1))
         self.master_count = master_count
         assert self.master_count >= 3, \
             "Redis Cluster requires at least 3 master nodes"
