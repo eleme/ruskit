@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+
+import datetime
 import redis
 
 from ruskit import cli
@@ -19,6 +22,23 @@ def info(args):
     echo("Masters:", len(cluster.masters))
     echo("Instances:", len(cluster.nodes))
     echo("Slots:", sum(len(n.slots) for n in cluster.masters))
+
+
+@cli.command
+@cli.argument("cluster")
+def slowlog(args):
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+    slow_logs = cluster.get_slow_logs()
+    for master, logs in slow_logs.iteritems():
+        echo("Node: ", "%s:%s" % (master.host, master.port))
+        for log in logs:
+            time = datetime.datetime.fromtimestamp(log['start_time'])
+            echo(
+                "\t",
+                time,
+                "%s%s" % (log['duration'], "μs"),
+                repr(log['command'])
+                )
 
 
 @cli.command
