@@ -112,3 +112,13 @@ def destroy(args):
 
     for node in cluster.nodes:
         node.reset(hard=True)
+
+
+@cli.command
+@cli.argument("cluster")
+def flushall(args):
+    """Execute flushall in all cluster nodes.
+    """
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+    for node in cluster.masters:
+        node.flushall()
