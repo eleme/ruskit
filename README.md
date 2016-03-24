@@ -82,3 +82,9 @@ ruskit replicate 192.168.0.14:8001 192.168.0.11:8000
 ```bash
 ruskit destroy 192.168.0.11:8000
 ```
+
+##### Flushall data
+
+```bash
+ruskit flushall 192.168.0.11:8000
+```
