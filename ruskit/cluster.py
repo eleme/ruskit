@@ -222,6 +222,12 @@ class Cluster(object):
                  if i["link_status"] != "disconnected"]
         return cls(nodes)
 
+    def get_slow_logs(self):
+        result = {}
+        for master in self.masters:
+            result[master] = master.slowlog_get(128)
+        return result
+
     @property
     def masters(self):
         return [i for i in self.nodes if i.is_master()]

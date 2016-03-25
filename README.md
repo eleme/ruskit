@@ -88,3 +88,9 @@ ruskit destroy 192.168.0.11:8000
 ```bash
 ruskit flushall 192.168.0.11:8000
 ```
+
+##### View slowlog(Recent 128 logs per node)
+
+```bash
+ruskit slowlog 192.168.0.11:8000
+```
