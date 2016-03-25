@@ -384,7 +384,7 @@ class Cluster(object):
                 echo("Migrating:", key)
             src.migrate(dst.host, dst.port, key, 0, timeout)
 
-        for node in self.nodes:
+        for node in self.masters:
             node.setslot("NODE", slot, dst.name)
 
     def migrate(self, src, dst, count, verbose=True):
