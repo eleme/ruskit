@@ -50,12 +50,20 @@ class ClusterNode(object):
         self.r = redis.Redis(host, port, socket_timeout=socket_timeout)
         self.r.ping()
 
+        self._cached_node_info = None
+
     @classmethod
     def from_uri(cls, uri):
         if not uri.startswith("redis://"):
             uri = "redis://{}".format(uri)
         d = urlparse.urlparse(uri)
         return cls(d.hostname, d.port)
+
+    @classmethod
+    def from_info(cls, info):
+        node = cls.from_uri(info["addr"])
+        node._cached_node_info = info
+        return node
 
     def __repr__(self):
         return "ClusterNode<{}:{}>".format(self.host, self.port)
@@ -88,8 +96,9 @@ class ClusterNode(object):
 
     @property
     def node_info(self):
-        nodes = self.nodes()
-        return nodes[0]
+        if self._cached_node_info is None:
+            self._cached_node_info = self.nodes()[0]
+        return self._cached_node_info
 
     @property
     def slots(self):
@@ -218,7 +227,7 @@ class Cluster(object):
 
     @classmethod
     def from_node(cls, node):
-        nodes = [ClusterNode.from_uri(i["addr"]) for i in node.nodes()
+        nodes = [ClusterNode.from_info(i) for i in node.nodes()
                  if i["link_status"] != "disconnected"]
         return cls(nodes)
 
