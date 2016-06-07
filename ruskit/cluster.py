@@ -230,7 +230,9 @@ class Cluster(object):
 
     @property
     def masters(self):
-        return [i for i in self.nodes if i.is_master()]
+        nodes = self.nodes[0].nodes()
+        masters = set(n["addr"] for n in nodes if 'master' in n["flags"])
+        return [i for i in self.nodes if "{}:{}".format(i.host, i.port) in masters]
 
     def consistent(self):
         sig = set()
