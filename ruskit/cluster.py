@@ -48,8 +48,6 @@ class ClusterNode(object):
         self.port = port
         self.retry = retry
         self.r = redis.Redis(host, port, socket_timeout=socket_timeout)
-        self.r.ping()
-
         self._cached_node_info = None
 
     @classmethod
