@@ -328,6 +328,14 @@ class Cluster(object):
         """
         new = ClusterNode.from_uri(node["addr"])
         cluster_member = self.nodes[0]
+
+        new_node_version = new.info()['redis_version']
+        cluster_version = cluster_member.info()['redis_version']
+        if cluster_version != new_node_version:
+            raise RuskitException(
+                'invalid redis version, cluster: {}, node: {}'.format(
+                    cluster_version, new_node_version))
+
         new.meet(cluster_member.host, cluster_member.port)
         self.nodes.append(new)
 

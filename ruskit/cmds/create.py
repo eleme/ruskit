@@ -4,7 +4,7 @@ import time
 import uuid
 
 from ruskit import cli
-from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster
+from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster, RuskitException
 from ..utils import echo, spread, divide
 
 
@@ -16,6 +16,10 @@ def split_slot(n, m):
         res.append((total, c + total))
         total += c
     return res
+
+
+class CreateClusterFail(RuskitException):
+    pass
 
 
 class NodeWrapper(object):
@@ -65,12 +69,22 @@ class Manager(object):
         self.slaves = []
 
     def check(self):
+        versions = set()
         for instance in self.instances:
             info = instance.info()
-            if not info.get("cluster_enabled") or info.get("db0") or \
-                    instance.cluster_info()["cluster_known_nodes"] != 1:
-                return False
-        return True
+            if not info.get("cluster_enabled"):
+                raise CreateClusterFail("cluster not enabled")
+            if info.get("db0"):
+                raise CreateClusterFail("data exists in db0")
+            if instance.cluster_info()["cluster_known_nodes"] != 1:
+                raise CreateClusterFail(
+                    "node {}:{} belong to other cluster".format(
+                        instance.host, instance.port))
+            versions.add(info['redis_version'])
+        if len(versions) != 1:
+            raise CreateClusterFail(
+                "multiple versions found: {}".format(list(versions)))
+        return True  # keep this for compability
 
     def init_slots(self):
         ips = collections.defaultdict(list)
@@ -187,12 +201,11 @@ class Manager(object):
 @cli.argument("instances", nargs='+')
 def create(args):
     manager = Manager(args.slaves, args.instances, args.masters)
-    if not manager.check():
-        echo("Cluster can not be created.\n", color="red")
-        echo("To be a cluster member:")
-        echo("    1. enable cluster mode")
-        echo("    2. not a member of other clusters")
-        echo("    3. no data in db 0")
+    try:
+        manager.check()
+    except CreateClusterFail as e:
+        echo("Cluster can not be created: {}".format(e.message),
+            color="red")
         exit()
     manager.init_slots()
     manager.show_cluster_info()
