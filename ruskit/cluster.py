@@ -102,6 +102,9 @@ class ClusterNode(object):
     def slots(self):
         return self.node_info["slots"]
 
+    def flush_cache(self):
+        self._cached_node_info = None
+
     @property
     def name(self):
         return self.node_info["name"]
@@ -255,12 +258,12 @@ class Cluster(object):
         return len(sig) == 1
 
     def healthy(self):
+        for i in self.nodes:
+            i.flush_cache()
         slots = list(itertools.chain(*[i.slots for i in self.nodes]))
         return len(slots) == CLUSTER_HASH_SLOTS and self.consistent()
 
     def wait(self):
-        time.sleep(5)  # force wait 5 sec for redis servers to process cmds.
-
         while not self.consistent():
             time.sleep(1)
 
