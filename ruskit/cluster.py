@@ -259,6 +259,8 @@ class Cluster(object):
         return len(slots) == CLUSTER_HASH_SLOTS and self.consistent()
 
     def wait(self):
+        time.sleep(5)  # force wait 5 sec for redis servers to process cmds.
+
         while not self.consistent():
             time.sleep(1)
 
