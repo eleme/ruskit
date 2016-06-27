@@ -142,3 +142,20 @@ def flushall(args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
     for node in cluster.masters:
         node.flushall()
+
+
+@cli.command
+@cli.argument("cluster")
+@cli.argument("name")
+@cli.argument("value")
+@cli.argument("--config-command", default="config")
+@cli.pass_ctx
+def reconfigure(ctx, args):
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+    if not cluster:
+        ctx.abort("Cluster not exists")
+
+    for node in cluster.nodes:
+        echo("Setting `%s` of `%s` to `%s`" % (args.name, node, args.value))
+        node.execute_command(args.config_command + " SET",
+                             args.name, args.value)

@@ -4,6 +4,7 @@ from .add import add
 from .create import create
 from .manage import (
     info, fix, migrate, delete, reshard, replicate, destroy, flushall, slowlog,
+    reconfigure,
     )
 
 
@@ -19,6 +20,7 @@ def main():
     parser.add_command(replicate)
     parser.add_command(destroy)
     parser.add_command(slowlog)
+    parser.add_command(reconfigure)
     parser.add_command(flushall)
 
     parser.run()
