@@ -18,8 +18,29 @@ def split_slot(n, m):
     return res
 
 
-class CreateClusterFail(RuskitException):
+class InvalidNewNode(RuskitException):
     pass
+
+
+def check_new_nodes(new_nodes, old_nodes=None):
+    if old_nodes is None:
+        old_nodes = []
+
+    versions = set(n.info()['redis_version'] for n in old_nodes)
+    for instance in new_nodes:
+        info = instance.info()
+        if not info.get("cluster_enabled"):
+            raise InvalidNewNode("cluster not enabled")
+        if info.get("db0"):
+            raise InvalidNewNode("data exists in db0 of {}".format(instance))
+        if instance.cluster_info()["cluster_known_nodes"] != 1:
+            raise InvalidNewNode(
+                "node {}:{} belong to other cluster".format(
+                    instance.host, instance.port))
+        versions.add(info['redis_version'])
+    if len(versions) != 1:
+        raise InvalidNewNode(
+            "multiple versions found: {}".format(list(versions)))
 
 
 class NodeWrapper(object):
@@ -69,21 +90,7 @@ class Manager(object):
         self.slaves = []
 
     def check(self):
-        versions = set()
-        for instance in self.instances:
-            info = instance.info()
-            if not info.get("cluster_enabled"):
-                raise CreateClusterFail("cluster not enabled")
-            if info.get("db0"):
-                raise CreateClusterFail("data exists in db0")
-            if instance.cluster_info()["cluster_known_nodes"] != 1:
-                raise CreateClusterFail(
-                    "node {}:{} belong to other cluster".format(
-                        instance.host, instance.port))
-            versions.add(info['redis_version'])
-        if len(versions) != 1:
-            raise CreateClusterFail(
-                "multiple versions found: {}".format(list(versions)))
+        check_new_nodes(self.instances)
         return True  # keep this for compability
 
     def init_slots(self):
@@ -203,7 +210,7 @@ def create(args):
     manager = Manager(args.slaves, args.instances, args.masters)
     try:
         manager.check()
-    except CreateClusterFail as e:
+    except InvalidNewNode as e:
         echo("Cluster can not be created: {}".format(e.message),
             color="red")
         exit()

@@ -3,6 +3,7 @@ import time
 from ruskit import cli
 from ..cluster import ClusterNode, Cluster
 from ..utils import echo
+from .create import InvalidNewNode
 
 
 # nodes = [
@@ -51,4 +52,7 @@ def add(ctx, args):
     if not cluster.healthy():
         ctx.abort("Cluster not healthy.")
 
-    add_nodes(cluster, nodes)
+    try:
+        add_nodes(cluster, nodes)
+    except InvalidNewNode as e:
+        echo("failed to add node: {}".format(e.message), color="red")
