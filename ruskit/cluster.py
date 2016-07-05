@@ -417,6 +417,8 @@ class Cluster(object):
 
         for slot, _ in keys[:count]:
             self.migrate_slot(src, dst, slot, verbose=verbose)
+        src.flush_cache()
+        dst.flush_cache()
 
 
 def slot_balance(seq, amt):
