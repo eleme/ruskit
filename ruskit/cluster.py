@@ -232,6 +232,10 @@ class Cluster(object):
                  if i["link_status"] != "disconnected"]
         return cls(nodes)
 
+    def flush_all_cache(self):
+        for n in self.nodes:
+            n.flush_cache()
+
     def get_slow_logs(self):
         result = {}
         for master in self.masters:
@@ -258,8 +262,7 @@ class Cluster(object):
         return len(sig) == 1
 
     def healthy(self):
-        for i in self.nodes:
-            i.flush_cache()
+        self.flush_all_cache()
         slots = list(itertools.chain(*[i.slots for i in self.nodes]))
         return len(slots) == CLUSTER_HASH_SLOTS and self.consistent()
 
@@ -289,6 +292,7 @@ class Cluster(object):
                 continue
 
             self.migrate_slot(node, target, slot)
+            target.flush_cache()
 
         for slot, target_id in info["importing"].items():
             src = self.get_node(target_id)
@@ -297,6 +301,9 @@ class Cluster(object):
                 continue
 
             self.migrate_slot(src, node, slot)
+            src.flush_cache()
+
+        node.flush_cache()
 
     def reshard(self):
         if not self.consistent():
@@ -328,6 +335,8 @@ class Cluster(object):
             if n.is_slave(node.name):
                 n.replicate(masters[0].name)
             n.forget(node.name)
+
+        self.flush_all_cache()
 
         assert not node.slots
         node.reset()
@@ -361,6 +370,8 @@ class Cluster(object):
             target = masters[0]
 
         new.replicate(target.name)
+        new.flush_cache()
+        target.flush_cache()
 
     def fill_slots(self):
         masters = self.masters
@@ -374,6 +385,7 @@ class Cluster(object):
         for count, node in zip(div, masters):
             node.addslots(*missing[i:count + i])
             i += count
+            node.flush_cache()
 
     def migrate_node(self, src_node, count=None, income=False):
         nodes = [n for n in self.masters if n.name != src_node.name]
@@ -402,6 +414,7 @@ class Cluster(object):
 
         for node in self.masters:
             node.setslot("NODE", slot, dst.name)
+            node.flush_cache()
 
     def migrate(self, src, dst, count, verbose=True):
         if count <= 0:
