@@ -20,7 +20,8 @@ setup(
     },
     install_requires=[
         "hiredis",
-        "redis"
+        "redis",
+        "igraph",
     ],
     classifiers=[
         "Development Status :: 3 - Alpha",
