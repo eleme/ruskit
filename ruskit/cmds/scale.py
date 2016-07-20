@@ -5,10 +5,11 @@ from ..utils import echo
 
 
 class ScaleManager(object):
-    def __init__(self, cluster, new_nodes):
+    def __init__(self, cluster, new_nodes, max_slaves_limit):
         self.cluster = cluster
         self.new_nodes = new_nodes
-        self.solver = MaxFlowSolver.from_nodes(cluster.nodes, new_nodes)
+        self.solver = MaxFlowSolver.from_nodes(
+            cluster.nodes, new_nodes, max_slaves_limit)
 
     def peek_result(self):
         result, frees = self.solver.distribute_slaves()
@@ -36,7 +37,8 @@ def gen_nodes_from_args(nodes):
 
 
 @cli.command
-@cli.argument('--peek', dest='peek', default=False, action='store_true')
+@cli.argument("--peek", dest="peek", default=False, action="store_true")
+@cli.argument("--slaves-limit", default=None, type=int)
 @cli.argument("cluster")
 @cli.argument("master_count", type=int)
 @cli.argument("nodes", nargs='+')
@@ -48,7 +50,7 @@ def scale(ctx, args):
     if not cluster.healthy():
         ctx.abort("Cluster not healthy.")
 
-    manager = ScaleManager(cluster, new_nodes)
+    manager = ScaleManager(cluster, new_nodes, args.slaves_limit)
     if args.peek:
         echo('before', color='green')
         print_cluster(*manager.solver.get_distribution())

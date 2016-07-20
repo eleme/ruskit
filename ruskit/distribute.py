@@ -20,18 +20,22 @@ class NodeWrapper(object):
 
 
 class DistributionError(Exception):
-    pass
+    def __init__(self, missing):
+        self.missing = missing
+
+    def __str__(self):
+        return 'not all masters have slaves: {}'.format(self.missing)
 
 
 class MaxFlowSolver(object):
     '''Slaves distribution problem can be converted to max flow problem'''
 
     @classmethod
-    def from_nodes(cls, nodes, new_nodes):
+    def from_nodes(cls, nodes, new_nodes, max_slaves_limit=None):
         hosts, masters, slaves, frees = gen_distribution(nodes, new_nodes)
-        return cls(hosts, masters, slaves, frees)
+        return cls(hosts, masters, slaves, frees, max_slaves_limit)
 
-    def __init__(self, hosts, masters, slaves, frees):
+    def __init__(self, hosts, masters, slaves, frees, max_slaves_limit):
         host_count = len(hosts)
         self.hosts = hosts
         self.host_count = host_count
@@ -50,6 +54,7 @@ class MaxFlowSolver(object):
         self.t = self.vertex_count - 1
         self.result = []
         self.finished = False
+        self.max_slaves_limit = max_slaves_limit
 
     def _gen_graph(self):
         g = Graph().as_directed()
@@ -87,7 +92,8 @@ class MaxFlowSolver(object):
 
         mf = g.maxflow(self.s, self.t, g.es['weight'])
         if mf.value < self.orphans_count:
-            raise DistributionError('unable to distribute slaves')
+            missing = self._gen_hosts_missing_slaves(g, mf)
+            raise DistributionError(missing)
 
         for edge_index, e in enumerate(g.es):
             if e.source == self.s or e.target == self.t:
@@ -104,11 +110,25 @@ class MaxFlowSolver(object):
         assert len(sum(self.orphans, [])) == 0
         assert all(len(m.slaves) > 0 for m in sum(self.masters, []))
 
+    def _gen_hosts_missing_slaves(self, g, maxflow):
+        ct = self.host_count
+        flows = list(repeat(0, ct))
+        for edge_index, e in enumerate(g.es):
+            if e.source == self.s or e.target == self.t:
+                continue
+            flows[e.target - ct] += int(maxflow.flow[edge_index])
+        missing = map(operator.sub, map(len, self.orphans), flows)
+        missing = zip(self.hosts, missing)
+        return [m for m in missing if m[1] > 0]
+
     def _fill_remaining(self):
         g = self._gen_graph()
         ct = self.host_count
         flow_in = map(len, self.frees)
-        flow_out = list(repeat(len(sum(self.frees, [])), ct))
+        if self.max_slaves_limit is None:
+            flow_out = list(repeat(len(sum(self.frees, [])), ct))
+        else:
+            flow_out = self._gen_limits()
         for i, c in enumerate(flow_in):
             g[self.s, i] = c
         for i, c in enumerate(flow_out):
@@ -141,6 +161,14 @@ class MaxFlowSolver(object):
                 self.masters[e.target - ct].sort(key=lambda m: len(m.slaves))
 
         self.remaining_frees = sum(self.frees, [])
+
+    def _gen_limits(self):
+        limits = []
+        for masters in self.masters:
+            limits.append(sum(
+                max(self.max_slaves_limit - len(m.slaves), 0) \
+                for m in masters))
+        return limits
 
     def _sort_masters(self):
         for masters in self.masters:
