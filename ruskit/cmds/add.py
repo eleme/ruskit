@@ -2,8 +2,7 @@ import time
 
 from ruskit import cli
 from ..cluster import ClusterNode, Cluster
-from ..utils import echo
-from .create import InvalidNewNode
+from ..utils import echo, InvalidNewNode
 
 
 # nodes = [

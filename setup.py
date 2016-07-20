@@ -21,7 +21,7 @@ setup(
     install_requires=[
         "hiredis",
         "redis",
-        "igraph",
+        "python-igraph",
     ],
     classifiers=[
         "Development Status :: 3 - Alpha",

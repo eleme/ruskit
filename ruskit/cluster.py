@@ -10,7 +10,7 @@ try:
 except ImportError:
     import urllib.parse as urlparse
 
-from .utils import echo, divide
+from .utils import echo, divide, check_new_nodes, RuskitException
 
 CLUSTER_HASH_SLOTS = 16384
 
@@ -24,10 +24,6 @@ def _scan_keys(node, slot, count=10):
             break
         for key in keys:
             yield key
-
-
-class RuskitException(Exception):
-    pass
 
 
 class NodeNotFound(RuskitException):
@@ -347,8 +343,6 @@ class Cluster(object):
         :param node: should be formated like this
         `{"addr": "", "role": "slave", "master": "master_node_id"}
         """
-        from .cmds.create import check_new_nodes
-
         new = ClusterNode.from_uri(node["addr"])
         cluster_member = self.nodes[0]
         check_new_nodes([new], [cluster_member])

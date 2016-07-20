@@ -67,3 +67,32 @@ def spread(nodes, n):
             if len(target) >= n:
                 break
     return target
+
+
+class RuskitException(Exception):
+    pass
+
+
+class InvalidNewNode(RuskitException):
+    pass
+
+
+def check_new_nodes(new_nodes, old_nodes=None):
+    if old_nodes is None:
+        old_nodes = []
+
+    versions = set(n.info()['redis_version'] for n in old_nodes)
+    for instance in new_nodes:
+        info = instance.info()
+        if not info.get("cluster_enabled"):
+            raise InvalidNewNode("cluster not enabled")
+        if info.get("db0"):
+            raise InvalidNewNode("data exists in db0 of {}".format(instance))
+        if instance.cluster_info()["cluster_known_nodes"] != 1:
+            raise InvalidNewNode(
+                "node {}:{} belong to other cluster".format(
+                    instance.host, instance.port))
+        versions.add(info['redis_version'])
+    if len(versions) != 1:
+        raise InvalidNewNode(
+            "multiple versions found: {}".format(list(versions)))
