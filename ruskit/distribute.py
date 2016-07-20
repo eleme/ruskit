@@ -4,6 +4,7 @@ from itertools import imap, repeat, izip_longest
 from igraph import Graph
 
 from .cluster import Cluster, ClusterNode
+from .utils import echo
 
 
 class NodeWrapper(object):
@@ -27,32 +28,7 @@ class MaxFlowSolver(object):
 
     @classmethod
     def from_nodes(cls, nodes, new_nodes):
-        hosts = list({n.host for n in nodes + new_nodes})
-        host_count = len(hosts)
-        host_indices = {h: i for i, h in enumerate(hosts)}
-        masters = [[] for _ in xrange(host_count)]
-        slaves = [[] for _ in xrange(host_count)]
-        frees = [[] for _ in xrange(host_count)]
-        masters_map = {}
-        for n in nodes:
-            if not n.is_master():
-                continue
-            host_index = host_indices[n.host]
-            master = NodeWrapper(n, n.node_info['name'], host_index)
-            masters[host_index].append(master)
-            masters_map[n.node_info['name']] = master
-        for n in nodes:
-            if n.is_master():
-                continue
-            host_index = host_indices[n.host]
-            master = masters_map[n.node_info['replicate']]
-            slave = NodeWrapper(n, n.node_info['name'], host_index, master)
-            master.slaves.append(slave)
-            slaves[host_index].append(slave)
-        for n in new_nodes:
-            host_index = host_indices[n.host]
-            frees[host_index].append(
-                NodeWrapper(n, n.node_info['name'], host_index))
+        hosts, masters, slaves, frees = gen_distribution(nodes, new_nodes)
         return cls(hosts, masters, slaves, frees)
 
     def __init__(self, hosts, masters, slaves, frees):
@@ -117,7 +93,7 @@ class MaxFlowSolver(object):
             if e.source == self.s or e.target == self.t:
                 continue
             for _ in xrange(int(mf.flow[edge_index])):
-                f = self.frees[e.source].pop()
+                f = self.frees[e.source].pop(0)
                 o = self.orphans[e.target - ct].pop()
                 f.master = o
                 o.slaves.append(f)
@@ -153,7 +129,7 @@ class MaxFlowSolver(object):
             if e.source == self.s or e.target == self.t:
                 continue
             for _ in xrange(int(mf.flow[edge_index])):
-                f = self.frees[e.source].pop()
+                f = self.frees[e.source].pop(0)
                 m = next((m for m in self.masters[e.target - ct] \
                     if m.tag not in self.slice_tags[e.source]), None)
                 assert m is not None
@@ -171,6 +147,36 @@ class MaxFlowSolver(object):
             masters.sort(key=lambda m: len(m.slaves))
 
 
+def gen_distribution(nodes, new_nodes):
+    hosts = list({n.host for n in nodes + new_nodes})
+    host_count = len(hosts)
+    host_indices = {h: i for i, h in enumerate(hosts)}
+    masters = [[] for _ in xrange(host_count)]
+    slaves = [[] for _ in xrange(host_count)]
+    frees = [[] for _ in xrange(host_count)]
+    masters_map = {}
+    for n in nodes:
+        if not n.is_master():
+            continue
+        host_index = host_indices[n.host]
+        master = NodeWrapper(n, n.node_info['name'], host_index)
+        masters[host_index].append(master)
+        masters_map[n.node_info['name']] = master
+    for n in nodes:
+        if n.is_master():
+            continue
+        host_index = host_indices[n.host]
+        master = masters_map[n.node_info['replicate']]
+        slave = NodeWrapper(n, n.node_info['name'], host_index, master)
+        master.slaves.append(slave)
+        slaves[host_index].append(slave)
+    for n in new_nodes:
+        host_index = host_indices[n.host]
+        frees[host_index].append(
+            NodeWrapper(n, n.node_info['name'], host_index))
+    return hosts, masters, slaves, frees
+
+
 def print_cluster(hosts, masters, slaves, frees):
     ms = [['m{}'.format(n.port) for n in h] for h in masters]
     ss = [['s{}->({}):{}'.format(n.port, n.master.host_index, n.master.port) \
@@ -178,7 +184,15 @@ def print_cluster(hosts, masters, slaves, frees):
     fs = [['f{}'.format(f.port) for f in h] for h in frees]
     all_node = map(operator.add, ms, ss)
     all_node = map(operator.add, all_node, fs)
-    fmt = "{:<20}" * len(hosts)
-    print fmt.format(*['{}({})'.format(h, i) for i, h in enumerate(hosts)])
+    fmt = "{:<20}"
+    print (fmt * len(hosts)).format(
+        *['{}({})'.format(h, i) for i, h in enumerate(hosts)])
+    color_map = {
+        'm': 'red',
+        's': 'yellow',
+        'f': 'green',
+    }
     for line in izip_longest(*all_node, fillvalue=' '):
-        print fmt.format(*line)
+        for c in line:
+            echo(fmt.format(c), color=color_map.get(c[0]) or None, end='')
+        print ''

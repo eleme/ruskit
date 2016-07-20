@@ -1,7 +1,7 @@
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
-
 from ..distribute import MaxFlowSolver, print_cluster
+from ..utils import echo
 
 
 class ScaleManager(object):
@@ -10,12 +10,21 @@ class ScaleManager(object):
         self.new_nodes = new_nodes
         self.solver = MaxFlowSolver.from_nodes(cluster.nodes, new_nodes)
 
-    def check_new_nodes(self):
-        pass
-
     def peek_result(self):
         result, frees = self.solver.distribute_slaves()
         return result, frees
+
+    def add_slaves(self):
+        result, frees = self.solver.distribute_slaves()
+        nodes = []
+        for free, master in result:
+            nodes.append({
+                'cluster_node': free.node,
+                'role': 'slave',
+                'master': master.name,
+            })
+        self.cluster.add_nodes(nodes)
+        self.cluster.wait()
 
 
 def gen_nodes_from_args(nodes):
@@ -27,6 +36,7 @@ def gen_nodes_from_args(nodes):
 
 
 @cli.command
+@cli.argument('--peek', dest='peek', default=False, action='store_true')
 @cli.argument("cluster")
 @cli.argument("master_count", type=int)
 @cli.argument("nodes", nargs='+')
@@ -39,6 +49,11 @@ def scale(ctx, args):
         ctx.abort("Cluster not healthy.")
 
     manager = ScaleManager(cluster, new_nodes)
-    print_cluster(*manager.solver.get_distribution())
-    result, frees = manager.peek_result()
-    print_cluster(*manager.solver.get_distribution())
+    if args.peek:
+        echo('before', color='green')
+        print_cluster(*manager.solver.get_distribution())
+        result, frees = manager.peek_result()
+        echo('after', color='green')
+        print_cluster(*manager.solver.get_distribution())
+    else:
+        manager.add_slaves()
