@@ -169,5 +169,5 @@ def peek(ctx, args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
     if not cluster.consistent():
         ctx.abort("Cluster not consistent.")
-    hosts, masters, slaves, frees = gen_distribution(cluster.nodes, [])
-    print_cluster(hosts, masters, slaves, frees)
+    dist = gen_distribution(cluster.nodes, [])
+    print_cluster(dist)

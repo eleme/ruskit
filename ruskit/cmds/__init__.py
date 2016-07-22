@@ -2,7 +2,7 @@ from ..cli import CommandParser
 
 from .add import add
 from .create import create
-from .scale import scale
+from .scale import addslave
 from .manage import (
     info, fix, migrate, delete, reshard, replicate, destroy, flushall, slowlog,
     reconfigure, peek
@@ -23,8 +23,8 @@ def main():
     parser.add_command(slowlog)
     parser.add_command(reconfigure)
     parser.add_command(flushall)
-    parser.add_command(scale)
     parser.add_command(peek)
+    parser.add_command(addslave)
 
     parser.run()
 

@@ -32,8 +32,9 @@ class MaxFlowSolver(object):
 
     @classmethod
     def from_nodes(cls, nodes, new_nodes, max_slaves_limit=None):
-        hosts, masters, slaves, frees = gen_distribution(nodes, new_nodes)
-        return cls(hosts, masters, slaves, frees, max_slaves_limit)
+        param = gen_distribution(nodes, new_nodes)
+        param['max_slaves_limit'] = max_slaves_limit
+        return cls(**param)
 
     def __init__(self, hosts, masters, slaves, frees, max_slaves_limit):
         host_count = len(hosts)
@@ -63,7 +64,12 @@ class MaxFlowSolver(object):
         return g
 
     def get_distribution(self):
-        return self.hosts, self.masters, self.slaves, self.frees
+        return {
+            'hosts': self.hosts,
+            'masters': self.masters,
+            'slaves': self.slaves,
+            'frees': self.frees,
+        }
 
     def distribute_slaves(self):
         if self.finished:
@@ -202,10 +208,19 @@ def gen_distribution(nodes, new_nodes):
         host_index = host_indices[n.host]
         frees[host_index].append(
             NodeWrapper(n, n.node_info['name'], host_index))
-    return hosts, masters, slaves, frees
+    return {
+        'hosts': hosts,
+        'masters': masters,
+        'slaves': slaves,
+        'frees': frees,
+    }
 
 
-def print_cluster(hosts, masters, slaves, frees):
+def print_cluster(distribution):
+    hosts = distribution['hosts']
+    masters = distribution['masters']
+    slaves = distribution['slaves']
+    frees = distribution['frees']
     ms = [['m{}'.format(n.port) for n in h] for h in masters]
     ss = [['s{}->({}):{}'.format(n.port, n.master.host_index, n.master.port) \
         for n in h] for h in slaves]

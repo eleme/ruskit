@@ -1,10 +1,29 @@
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
-from ..distribute import MaxFlowSolver, print_cluster
+from ..distribute import MaxFlowSolver, print_cluster, gen_distribution
 from ..utils import echo
 
 
-class ScaleManager(object):
+class AddMastersManager(object):
+    def __init__(self, cluster, new_nodes):
+        self.cluster = cluster
+        self.new_nodes = new_nodes
+
+    def add_masters(self):
+        nodes = []
+        for n in self.new_nodes:
+            nodes.append({
+                'cluster_node': n,
+                'role': 'master',
+            })
+        self.cluster.add_nodes(nodes)
+        self.cluster.wait()
+
+    def get_distribution(self):
+        return gen_distribution(self.cluster.nodes, self.new_nodes)
+
+
+class AddSlavesManager(object):
     def __init__(self, cluster, new_nodes, max_slaves_limit):
         self.cluster = cluster
         self.new_nodes = new_nodes
@@ -27,6 +46,8 @@ class ScaleManager(object):
         self.cluster.add_nodes(nodes)
         self.cluster.wait()
 
+    def get_distribution(self):
+        return self.solver.get_distribution()
 
 def gen_nodes_from_args(nodes):
     new_nodes = []
@@ -37,25 +58,25 @@ def gen_nodes_from_args(nodes):
 
 
 @cli.command
-@cli.argument("--peek", dest="peek", default=False, action="store_true")
-@cli.argument("--slaves-limit", default=None, type=int)
+@cli.argument("-p", "--peek", dest="peek", default=False, action="store_true")
+@cli.argument("-l", "--slaves-limit", dest="slaves_limit",
+    default=None, type=int)
 @cli.argument("cluster")
-@cli.argument("master_count", type=int)
 @cli.argument("nodes", nargs='+')
 @cli.pass_ctx
-def scale(ctx, args):
+def addslave(ctx, args):
     new_nodes = gen_nodes_from_args(args.nodes)
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
 
     if not cluster.healthy():
         ctx.abort("Cluster not healthy.")
 
-    manager = ScaleManager(cluster, new_nodes, args.slaves_limit)
+    manager = AddSlavesManager(cluster, new_nodes, args.slaves_limit)
     if args.peek:
-        echo('before', color='green')
-        print_cluster(*manager.solver.get_distribution())
+        echo('before', color='purple')
+        print_cluster(manager.get_distribution())
         result, frees = manager.peek_result()
-        echo('after', color='green')
-        print_cluster(*manager.solver.get_distribution())
+        echo('after', color='purple')
+        print_cluster(manager.get_distribution())
     else:
         manager.add_slaves()
