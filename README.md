@@ -26,6 +26,9 @@ ruskit add 192.168.0.11:8000 192.168.0.13:8000 192.168.0.14:8000
 # Add slaves:
 # ruskit add <node belong to cluster> <slave node>,<master node>
 ruskit add 192.168.0.11:8000 192.168.0.14:8001,192.168.0.13:8000
+
+# ruskit addslaves [--peek] [--slaves-limit <max slaves count>] <node belong to cluster> <slave node> [<slave node> ...]
+ruskit addslaves --peek --slaves-limit 3 192.168.0.11:8000 192.168.0.14:8001 192.168.0.14:8002
 ```
 
 ##### Query cluster info
@@ -93,4 +96,10 @@ ruskit flushall 192.168.0.11:8000
 
 ```bash
 ruskit slowlog 192.168.0.11:8000
+```
+
+##### View nodes distribution
+```bash
+# ruskit peek <node belong to cluster>
+ruskit peek 192.168.0.11:8000
 ```

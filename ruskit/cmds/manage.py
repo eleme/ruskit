@@ -6,6 +6,7 @@ import redis
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
 from ..utils import echo
+from ..distribute import print_cluster, gen_distribution
 
 
 @cli.command
@@ -159,3 +160,14 @@ def reconfigure(ctx, args):
         echo("Setting `%s` of `%s` to `%s`" % (args.name, node, args.value))
         node.execute_command(args.config_command + " SET",
                              args.name, args.value)
+
+
+@cli.command
+@cli.argument("cluster")
+@cli.pass_ctx
+def peek(ctx, args):
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+    if not cluster.consistent():
+        ctx.abort("Cluster not consistent.")
+    dist = gen_distribution(cluster.nodes, [])
+    print_cluster(dist)

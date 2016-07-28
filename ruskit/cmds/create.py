@@ -4,8 +4,9 @@ import time
 import uuid
 
 from ruskit import cli
-from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster, RuskitException
-from ..utils import echo, spread, divide
+from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster
+from ..utils import echo, spread, divide, InvalidNewNode, check_new_nodes, \
+    RuskitException
 
 
 def split_slot(n, m):
@@ -16,31 +17,6 @@ def split_slot(n, m):
         res.append((total, c + total))
         total += c
     return res
-
-
-class InvalidNewNode(RuskitException):
-    pass
-
-
-def check_new_nodes(new_nodes, old_nodes=None):
-    if old_nodes is None:
-        old_nodes = []
-
-    versions = set(n.info()['redis_version'] for n in old_nodes)
-    for instance in new_nodes:
-        info = instance.info()
-        if not info.get("cluster_enabled"):
-            raise InvalidNewNode("cluster not enabled")
-        if info.get("db0"):
-            raise InvalidNewNode("data exists in db0 of {}".format(instance))
-        if instance.cluster_info()["cluster_known_nodes"] != 1:
-            raise InvalidNewNode(
-                "node {}:{} belong to other cluster".format(
-                    instance.host, instance.port))
-        versions.add(info['redis_version'])
-    if len(versions) != 1:
-        raise InvalidNewNode(
-            "multiple versions found: {}".format(list(versions)))
 
 
 class NodeWrapper(object):

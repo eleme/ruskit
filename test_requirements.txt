@@ -1,0 +1,7 @@
+funcsigs==1.0.2
+hiredis==0.2.0
+mock==2.0.0
+pbr==1.10.0
+python-igraph==0.7.1.post6
+redis==2.10.5
+six==1.10.0

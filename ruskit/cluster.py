@@ -10,7 +10,7 @@ try:
 except ImportError:
     import urllib.parse as urlparse
 
-from .utils import echo, divide
+from .utils import echo, divide, check_new_nodes, RuskitException
 
 CLUSTER_HASH_SLOTS = 16384
 
@@ -24,10 +24,6 @@ def _scan_keys(node, slot, count=10):
             break
         for key in keys:
             yield key
-
-
-class RuskitException(Exception):
-    pass
 
 
 class NodeNotFound(RuskitException):
@@ -341,14 +337,54 @@ class Cluster(object):
         assert not node.slots
         node.reset()
 
+    def add_nodes(self, nodes):
+        '''The format of node is similar to add_node.
+        If node contains a key 'cluster_node'
+        whose value is an instance of ClusterNode,
+        it will be used directly.
+        '''
+        assert all(map(
+            lambda n: n['role'] == 'master' or 'master' in n, nodes))
+        new_nodes = [n.get('cluster_node') or ClusterNode.from_uri(n['addr']) \
+            for n in nodes]
+        cluster_member = self.nodes[0]
+        check_new_nodes(new_nodes, [cluster_member])
+
+        for n in new_nodes:
+            n.meet(cluster_member.host, cluster_member.port)
+        self._wait_nodes_updated(cluster_member, new_nodes)
+        self.wait()
+        self.nodes.extend(new_nodes)
+
+        assert len(nodes) == len(new_nodes)
+        for (new, n) in zip(new_nodes, nodes):
+            if n['role'] == 'master':
+                continue
+            target = self.get_node(n['master'])
+            if not target:
+                raise NodeNotFound(n["master"])
+            new.replicate(target.name)
+            new.flush_cache()
+            target.flush_cache()
+
+    def _wait_nodes_updated(self, cluster_member, new_nodes):
+        '''Sometimes even cluster_member has responded new_node.meet,
+        cluster_memeber.nodes() are still not updated
+        '''
+        while True:
+            known_nodes = [n['name'] for n in cluster_member.nodes()]
+            added_nodes = [n.name for n in new_nodes]
+            if len(set(known_nodes) & set(added_nodes)) == len(added_nodes):
+                break;
+            logger.info('nodes not updated')
+            time.sleep(1)
+
     def add_node(self, node):
         """Add a node to cluster.
 
         :param node: should be formated like this
         `{"addr": "", "role": "slave", "master": "master_node_id"}
         """
-        from .cmds.create import check_new_nodes
-
         new = ClusterNode.from_uri(node["addr"])
         cluster_member = self.nodes[0]
         check_new_nodes([new], [cluster_member])
