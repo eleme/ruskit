@@ -1,15 +1,15 @@
 import unittest
 
-from mock import MagicMock, patch
+from mock import MagicMock, patch, call
 
 from ruskit.cluster import ClusterNode, Cluster
 
 
 CLUSTER_NODES_RESP = \
     'e925e492d37b4ac6125da32ad681896fdff7e7b3 host0:6000 ' \
-    '{}master - 0 0 1 connected 0-5461\n'                      \
+    '{}master - 0 0 1 connected 0-5461\n'                  \
     'ac4f2168f6ebd97aa54412260d27d3a49dd5eb8a host1:6001 ' \
-    '{}master - 0 1469498603296 2 connected 5462-10922\n'      \
+    '{}master - 0 1469498603296 2 connected 5462-10922\n'  \
     '81b76b0961fda365771f1952ab5ff2a2898fc45c host2:6002 ' \
     '{}master - 0 1469498602285 3 connected 10923-16383\n'
 
@@ -101,3 +101,10 @@ class TestCaseBase(unittest.TestCase):
 
     def assert_exec_cmd(self, node, *args, **kwargs):
         node.r.execute_command.assert_any_call(*args, **kwargs)
+
+    def assert_no_exec(self, node, *args, **kwargs):
+        func = node.r.execute_command
+        self.assertNotIn(call(*args, **kwargs), func.mock_calls)
+
+    def assert_not_called_with(self, mock_func, *args, **kwargs):
+        self.assertNotIn(call(*args, **kwargs), mock_func.mock_calls)

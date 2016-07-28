@@ -1,5 +1,9 @@
 import mock
 import redis
+from mock import patch
+
+from test_base import TestCaseBase, MockNewNode
+from ruskit.cluster import Cluster, ClusterNode
 
 
 class MockNode(object):
@@ -119,3 +123,86 @@ def test_distribute(monkeypatch):
 
     for s in manager.slaves:
         assert master_map[s.unassigned_master].host != s.host
+
+
+def clear_slots(node):
+        node._cached_node_info['slots'] = []
+        return mock.MagicMock()
+
+
+class TestCluster(TestCaseBase):
+    @patch.object(Cluster, 'migrate_node', side_effect=clear_slots)
+    def test_delete(self, migrate_node):
+        cluster = self.cluster
+        a = cluster.nodes[0]
+        b = cluster.nodes[1]
+        c = cluster.nodes[2]
+        cluster.delete_node(a)
+        migrate_node.assert_called_with(a)
+        self.assertEqual(cluster.get_node(a.name), None)
+        self.assert_exec_cmd(a, 'CLUSTER RESET')
+        self.assert_exec_cmd(b, 'CLUSTER FORGET', a.name)
+        self.assert_exec_cmd(c, 'CLUSTER FORGET', a.name)
+
+    @patch.object(Cluster, 'migrate_slot')
+    def test_fix_node_migrating(self, migrate_slot):
+        cluster = self.cluster
+        a = cluster.nodes[0]
+        b = cluster.nodes[1]
+        c = cluster.nodes[2]
+        for n in cluster.nodes:
+            n.node_info  # gen node_info
+        a._cached_node_info['migrating'] = {
+            '233': b.name,
+            '666': c.name,
+            '99': 'name_not_in_cluster',
+        }
+        b._cached_node_info['importing'] = {'233': a.name}
+        cluster.fix_node(a)
+        self.assert_no_exec(a, 'CLUSTER SETSLOT', '233', 'STABLE')
+        self.assert_no_exec(b, 'CLUSTER SETSLOT', '233', 'STABLE')
+        self.assert_exec_cmd(a, 'CLUSTER SETSLOT', '666', 'STABLE')
+        self.assert_exec_cmd(a, 'CLUSTER SETSLOT', '99', 'STABLE')
+        migrate_slot.assert_called_with(a, b, '233')
+        self.assert_not_called_with(a, c, '666')
+
+    @patch.object(Cluster, 'migrate_slot')
+    def test_fix_node_importing(self, migrate_slot):
+        cluster = self.cluster
+        a = cluster.nodes[0]
+        b = cluster.nodes[1]
+        c = cluster.nodes[2]
+        for n in cluster.nodes:
+            n.node_info  # gen node_info
+        a._cached_node_info['importing'] = {
+            '233': b.name,
+            '666': c.name,
+            '99': 'name_not_in_cluster',
+        }
+        b._cached_node_info['migrating'] = {'233': a.name}
+        cluster.fix_node(a)
+        self.assert_no_exec(a, 'CLUSTER SETSLOT', '233', 'STABLE')
+        self.assert_no_exec(b, 'CLUSTER SETSLOT', '233', 'STABLE')
+        self.assert_exec_cmd(a, 'CLUSTER SETSLOT', '666', 'STABLE')
+        self.assert_exec_cmd(a, 'CLUSTER SETSLOT', '99', 'STABLE')
+        migrate_slot.assert_called_with(b, a, '233')
+        self.assert_not_called_with(migrate_slot, c, a, '666')
+
+    def test_fill_slots(self):
+        cluster = self.cluster
+        a = cluster.nodes[0]
+        b = cluster.nodes[1]
+        c = cluster.nodes[2]
+        for n in cluster.nodes:
+            n.node_info  # gen node_info
+        missing_slots = a._cached_node_info['slots'][-6:]
+        a._cached_node_info['slots'] = a._cached_node_info['slots'][:-6]
+        cluster.fill_slots()
+        added_slots = []
+        for n in cluster.nodes:
+            added_slots.extend(
+                [list(args[1:]) for args, kwargs \
+                in n.r.execute_command.call_args_list \
+                if args[0] == 'CLUSTER ADDSLOTS'])
+        added_slots = sum(added_slots, [])
+        self.assertEqual(set(added_slots), set(missing_slots))
