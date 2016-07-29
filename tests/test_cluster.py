@@ -130,6 +130,17 @@ def clear_slots(node):
         return mock.MagicMock()
 
 
+def gen_nodes_method():
+    backup_func = ClusterNode.nodes
+    def inconsistent_slots(node):
+        result = backup_func(node)
+        if node.port == 6000:
+            slot = result[1]['slots'].pop()
+            result[0]['slots'].append(slot)
+        return result
+    return inconsistent_slots
+
+
 class TestCluster(TestCaseBase):
     @patch.object(Cluster, 'migrate_node', side_effect=clear_slots)
     def test_delete(self, migrate_node):
@@ -206,3 +217,10 @@ class TestCluster(TestCaseBase):
                 if args[0] == 'CLUSTER ADDSLOTS'])
         added_slots = sum(added_slots, [])
         self.assertEqual(set(added_slots), set(missing_slots))
+
+    def test_consistent(self):
+        self.assertTrue(self.cluster.consistent())
+
+    @patch.object(ClusterNode, 'nodes', new_callable=gen_nodes_method)
+    def test_slots_consistent(self, _):
+        self.assertFalse(self.cluster.consistent())

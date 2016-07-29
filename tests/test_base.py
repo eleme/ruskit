@@ -13,6 +13,7 @@ CLUSTER_NODES_RESP = \
     '81b76b0961fda365771f1952ab5ff2a2898fc45c host2:6002 ' \
     '{}master - 0 1469498602285 3 connected 10923-16383\n'
 
+
 NEW_NODE_RESP_LIST = {
     6003: '70bb37e2f98a5d12d9c39aeafc4528841ba2c0a5 host3:6003 ' \
           'myself,master - 0 0 0 connected',
@@ -21,6 +22,7 @@ NEW_NODE_RESP_LIST = {
     6005: '3a59ed121ad67fecf08c5eaa159f98ca3b10926a host5:6005 ' \
           'myself,master - 0 0 0 connected',
 }
+
 
 class MockRedisClient(object):
     def __init__(self, cluster_node):
