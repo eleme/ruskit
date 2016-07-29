@@ -2,7 +2,7 @@ import mock
 import redis
 from mock import patch
 
-from test_base import TestCaseBase, MockNewNode
+from test_base import TestCaseBase
 from ruskit.cluster import Cluster, ClusterNode
 
 
@@ -125,23 +125,12 @@ def test_distribute(monkeypatch):
         assert master_map[s.unassigned_master].host != s.host
 
 
-def clear_slots(node):
-        node._cached_node_info['slots'] = []
-        return mock.MagicMock()
-
-
-def gen_nodes_method():
-    backup_func = ClusterNode.nodes
-    def inconsistent_slots(node):
-        result = backup_func(node)
-        if node.port == 6000:
-            slot = result[1]['slots'].pop()
-            result[0]['slots'].append(slot)
-        return result
-    return inconsistent_slots
-
-
 class TestCluster(TestCaseBase):
+
+    def clear_slots(node):
+            node._cached_node_info['slots'] = []
+            return mock.MagicMock()
+
     @patch.object(Cluster, 'migrate_node', side_effect=clear_slots)
     def test_delete(self, migrate_node):
         cluster = self.cluster
@@ -212,14 +201,24 @@ class TestCluster(TestCaseBase):
         added_slots = []
         for n in cluster.nodes:
             added_slots.extend(
-                [list(args[1:]) for args, kwargs \
+                list(args[1:]) for args, kwargs \
                 in n.r.execute_command.call_args_list \
-                if args[0] == 'CLUSTER ADDSLOTS'])
+                if args[0] == 'CLUSTER ADDSLOTS')
         added_slots = sum(added_slots, [])
         self.assertEqual(set(added_slots), set(missing_slots))
 
     def test_consistent(self):
         self.assertTrue(self.cluster.consistent())
+
+    def gen_nodes_method():
+        backup_func = ClusterNode.nodes
+        def inconsistent_slots(node):
+            result = backup_func(node)
+            if node.port == 6000:
+                slot = result[1]['slots'].pop()
+                result[0]['slots'].append(slot)
+            return result
+        return inconsistent_slots
 
     @patch.object(ClusterNode, 'nodes', new_callable=gen_nodes_method)
     def test_slots_consistent(self, _):
