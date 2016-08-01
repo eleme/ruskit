@@ -1,5 +1,6 @@
-from ..cli import CommandParser
+import logging
 
+from ..cli import CommandParser
 from .add import add
 from .create import create
 from .scale import addslave
@@ -10,6 +11,8 @@ from .manage import (
 
 
 def main():
+    logging.basicConfig()
+
     parser = CommandParser(fromfile_prefix_chars='@')
     parser.add_command(add)
     parser.add_command(delete)

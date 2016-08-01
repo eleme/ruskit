@@ -14,7 +14,9 @@ from .utils import echo, divide, check_new_nodes, RuskitException
 
 CLUSTER_HASH_SLOTS = 16384
 
+
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def _scan_keys(node, slot, count=10):
@@ -248,13 +250,8 @@ class Cluster(object):
             if not instance.is_master():
                 continue
             nodes = instance.nodes()
-            slots, names = [], []
-            for node in nodes:
-                slots.extend(node["slots"])
-                names.append(node["name"])
-            info = "{}:{}".format('|'.join(sorted(names)),
-                                  ','.join(str(i) for i in sorted(slots)))
-            sig.add(hashlib.md5(info).hexdigest())
+            slots_map = sorted((n['name'], sorted(n['slots'])) for n in nodes)
+            sig.add(hashlib.md5(str(slots_map)).hexdigest())
         return len(sig) == 1
 
     def healthy(self):

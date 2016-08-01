@@ -103,3 +103,9 @@ ruskit slowlog 192.168.0.11:8000
 # ruskit peek <node belong to cluster>
 ruskit peek 192.168.0.11:8000
 ```
+
+## Test
+```
+pip install -r test_requirements.txt
+py.test tests/
+```
