@@ -21,8 +21,10 @@ setup(
     install_requires=[
         "hiredis",
         "redis",
-        "python-igraph",
     ],
+    extras_require={
+        'addslaves': ['python-igraph'],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",

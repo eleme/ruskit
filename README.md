@@ -9,6 +9,9 @@ Redis cluster administration toolkit.
 
 ```bash
 pip install ruskit
+# Note that `addslaves` command requires python-igraph which is not installed by default
+# Run the command below if you need `addslaves`
+pip install ruskit[addslaves]
 ```
 
 ##### Create cluster

@@ -32,6 +32,9 @@ class MaxFlowSolver(object):
 
     @classmethod
     def from_nodes(cls, nodes, new_nodes, max_slaves_limit=None):
+        '''When this is used only for peeking reuslt
+           `new_nodes` can be any type with `host` and `port` attributes
+        '''
         param = gen_distribution(nodes, new_nodes)
         param['max_slaves_limit'] = max_slaves_limit
         return cls(**param)
@@ -204,10 +207,11 @@ def gen_distribution(nodes, new_nodes):
         slave = NodeWrapper(n, n.node_info['name'], host_index, master)
         master.slaves.append(slave)
         slaves[host_index].append(slave)
-    for n in new_nodes:
+    for i, n in enumerate(new_nodes):
         host_index = host_indices[n.host]
+        # use dummy name for new nodes to avoid getting info from them
         frees[host_index].append(
-            NodeWrapper(n, n.node_info['name'], host_index))
+            NodeWrapper(n, i, host_index))
     return {
         'hosts': hosts,
         'masters': masters,

@@ -31,8 +31,15 @@ class AddSlavesManager(object):
             cluster.nodes, new_nodes, max_slaves_limit)
 
     def peek_result(self):
-        result, frees = self.solver.distribute_slaves()
-        return result, frees
+        match, frees = self.solver.distribute_slaves()
+        match = [{
+            'master': m,
+            'slave': s,
+        } for s, m in match]
+        return {
+            'match': match,
+            'frees': frees,
+        }
 
     def add_slaves(self):
         result, frees = self.solver.distribute_slaves()
@@ -75,7 +82,7 @@ def addslave(ctx, args):
     if args.peek:
         echo('before', color='purple')
         print_cluster(manager.get_distribution())
-        result, frees = manager.peek_result()
+        result = manager.peek_result()
         echo('after', color='purple')
         print_cluster(manager.get_distribution())
     else:
