@@ -2,7 +2,7 @@ import time
 
 from ruskit import cli
 from ..cluster import ClusterNode, Cluster
-from ..utils import echo, InvalidNewNode
+from ..utils import echo, InvalidNewNode, timeout_argument
 
 
 # nodes = [
@@ -43,6 +43,7 @@ def format_nodes(nodes):
 @cli.command
 @cli.argument("cluster")
 @cli.argument("nodes", nargs='+')
+@timeout_argument
 @cli.pass_ctx
 def add(ctx, args):
     nodes = format_nodes(args.nodes)

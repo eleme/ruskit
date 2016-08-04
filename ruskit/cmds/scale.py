@@ -1,7 +1,7 @@
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
 from ..distribute import MaxFlowSolver, print_cluster, gen_distribution
-from ..utils import echo
+from ..utils import echo, timeout_argument
 
 
 class AddMastersManager(object):
@@ -63,6 +63,7 @@ def gen_nodes_from_args(nodes):
     default=None, type=int)
 @cli.argument("cluster")
 @cli.argument("nodes", nargs='+')
+@timeout_argument
 @cli.pass_ctx
 def addslave(ctx, args):
     new_nodes = gen_nodes_from_args(args.nodes)

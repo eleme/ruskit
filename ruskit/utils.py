@@ -3,6 +3,10 @@ from __future__ import print_function
 import itertools
 import os
 import sys
+from functools import wraps
+
+from ruskit import cli
+
 
 COLOR_MAP = {
     "red": 31,
@@ -96,3 +100,19 @@ def check_new_nodes(new_nodes, old_nodes=None):
     if len(versions) != 1:
         raise InvalidNewNode(
             "multiple versions found: {}".format(list(versions)))
+
+
+def timeout_argument(func):
+    from .cluster import ClusterNode
+    @cli.argument('--timeout', type=int)
+    @wraps(func)
+    def _wrapper(*arguments):
+        if len(arguments) == 1:
+            args = arguments[0]
+        elif len(arguments) == 2:
+            ctx, args = arguments
+        else:
+            raise Exception('invalid arguments')
+        ClusterNode.socket_timeout = args.timeout
+        return func(*arguments)
+    return _wrapper
