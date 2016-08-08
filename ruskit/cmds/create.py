@@ -6,7 +6,7 @@ import uuid
 from ruskit import cli
 from ..cluster import ClusterNode, CLUSTER_HASH_SLOTS, Cluster
 from ..utils import echo, spread, divide, InvalidNewNode, check_new_nodes, \
-    RuskitException
+    RuskitException, timeout_argument
 
 
 def split_slot(n, m):
@@ -182,6 +182,7 @@ class Manager(object):
 @cli.argument("-s", "--slaves", type=int, default=0)
 @cli.argument("-m", "--masters", type=int, default=0)
 @cli.argument("instances", nargs='+')
+@timeout_argument
 def create(args):
     manager = Manager(args.slaves, args.instances, args.masters)
     try:

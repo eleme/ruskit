@@ -7,10 +7,12 @@ from ruskit import cli
 from ..cluster import Cluster, ClusterNode
 from ..utils import echo
 from ..distribute import print_cluster, gen_distribution
+from ..utils import timeout_argument
 
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 def info(args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
     dis = []
@@ -27,6 +29,7 @@ def info(args):
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 def slowlog(args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
     slow_logs = cluster.get_slow_logs()
@@ -44,6 +47,7 @@ def slowlog(args):
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 def fix(args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
     cluster.fix_open_slots()
@@ -53,6 +57,7 @@ def fix(args):
 @cli.command
 @cli.argument("cluster")
 @cli.argument("nodes", nargs='+')
+@timeout_argument
 def delete(args):
     """Delete nodes from the cluster
     """
@@ -71,6 +76,7 @@ def delete(args):
 @cli.argument("-s", "--slot", type=int)
 @cli.argument("-c", "--count", type=int)
 @cli.argument("-i", "--income", action="store_true")
+@timeout_argument
 @cli.pass_ctx
 def migrate(ctx, args):
     src = ClusterNode.from_uri(args.src)
@@ -95,6 +101,7 @@ def migrate(ctx, args):
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 def reshard(args):
     """Balance slots in the cluster.
 
@@ -107,6 +114,7 @@ def reshard(args):
 @cli.command
 @cli.argument("node")
 @cli.argument("master")
+@timeout_argument
 @cli.pass_ctx
 def replicate(ctx, args):
     """Make node to be the slave of a master.
@@ -126,6 +134,7 @@ def replicate(ctx, args):
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 def destroy(args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
     for node in cluster.masters:
@@ -137,6 +146,7 @@ def destroy(args):
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 def flushall(args):
     """Execute flushall in all cluster nodes.
     """
@@ -150,6 +160,7 @@ def flushall(args):
 @cli.argument("name")
 @cli.argument("value")
 @cli.argument("--config-command", default="config")
+@timeout_argument
 @cli.pass_ctx
 def reconfigure(ctx, args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
@@ -164,6 +175,7 @@ def reconfigure(ctx, args):
 
 @cli.command
 @cli.argument("cluster")
+@timeout_argument
 @cli.pass_ctx
 def peek(ctx, args):
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))

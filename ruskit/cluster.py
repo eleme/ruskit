@@ -41,7 +41,10 @@ class ClusterNotHealthy(RuskitException):
 
 
 class ClusterNode(object):
-    def __init__(self, host, port, socket_timeout=1, retry=10):
+    socket_timeout = 1
+
+    def __init__(self, host, port, socket_timeout=None, retry=10):
+        socket_timeout = socket_timeout or ClusterNode.socket_timeout
         self.host = socket.gethostbyname(host)
         self.port = port
         self.retry = retry
