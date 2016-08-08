@@ -373,7 +373,7 @@ class Cluster(object):
             added_nodes = [n.name for n in new_nodes]
             if len(set(known_nodes) & set(added_nodes)) == len(added_nodes):
                 break;
-            logger.info('nodes not updated')
+            logger.info('waiting for adding new nodes in `cluster nodes`')
             time.sleep(1)
 
     def add_node(self, node):
