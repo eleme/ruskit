@@ -101,19 +101,18 @@ def test_retry(monkeypatch):
     assert times[0] == 4
 
 
+@patch('ruskit.cmds.create.ClusterNode', MockNode)
 def test_distribute(monkeypatch):
     from ruskit import cluster
-    monkeypatch.setattr(cluster, 'ClusterNode', MockNode)
-
     from ruskit.cmds.create import Manager
 
     instance = [
-        '10.0.15.59:7101',
-        '10.0.15.60:7101',
-        '10.0.50.139:7101',
-        '10.0.15.59:7102',
-        '10.0.15.60:7102',
-        '10.0.50.139:7102',
+        'host1:1',
+        'host2:2',
+        'host3:3',
+        'host4:4',
+        'host5:5',
+        'host6:6',
     ]
 
     manager = Manager(1, instance)

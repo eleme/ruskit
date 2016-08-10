@@ -1,8 +1,8 @@
 import logging
 
 from ..cli import CommandParser
-from .add import add
-from .create import create
+from .add import add as add_cmd  # name conflict with module
+from .create import create as create_cmd  # name conflict with module
 from .scale import addslave
 from .manage import (
     info, fix, migrate, delete, reshard, replicate, destroy, flushall, slowlog,
@@ -10,13 +10,11 @@ from .manage import (
     )
 
 
-def main():
-    logging.basicConfig()
-
+def gen_parser():
     parser = CommandParser(fromfile_prefix_chars='@')
-    parser.add_command(add)
+    parser.add_command(add_cmd)
     parser.add_command(delete)
-    parser.add_command(create)
+    parser.add_command(create_cmd)
     parser.add_command(migrate)
     parser.add_command(info)
     parser.add_command(fix)
@@ -28,7 +26,12 @@ def main():
     parser.add_command(flushall)
     parser.add_command(peek)
     parser.add_command(addslave)
+    return parser
 
+
+def main():
+    logging.basicConfig()
+    parser = gen_parser()
     parser.run()
 
 
