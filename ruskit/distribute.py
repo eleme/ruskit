@@ -1,8 +1,6 @@
 import operator
 from itertools import imap, repeat, izip_longest
 
-from igraph import Graph
-
 from .cluster import Cluster, ClusterNode
 from .utils import echo
 
@@ -61,6 +59,8 @@ class MaxFlowSolver(object):
         self.max_slaves_limit = max_slaves_limit
 
     def _gen_graph(self):
+        # make it lazy to support optional addslaves command
+        from igraph import Graph
         g = Graph().as_directed()
         g.add_vertices(self.vertex_count)
         g.es['weight'] = 1  # enable weight
