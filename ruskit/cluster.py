@@ -275,6 +275,7 @@ class Cluster(object):
                 return i
 
     def fix_open_slots(self):
+        self.flush_all_cache()
         for master in self.masters:
             self.fix_node(master)
 
