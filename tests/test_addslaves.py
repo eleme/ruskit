@@ -19,6 +19,19 @@ class TestAddSlaves(TestCaseBase):
         self.assert_exec_cmd(new,
             'CLUSTER REPLICATE', self.cluster.nodes[1].name)
 
+    @patch.object(Cluster, 'wait')
+    @patch.object(Cluster, '_wait_nodes_updated')
+    def test_add_nodes_with_slow_mode(self, m1, m2):
+        new = self.new_nodes[0]
+        self.cluster.add_slaves([{
+            'cluster_node': new,
+            'role': 'slave',
+            'master': self.cluster.nodes[1].name,
+        }])
+        self.assert_exec_cmd(new, 'CLUSTER MEET', 'host0', 6000)
+        self.assert_exec_cmd(new,
+            'CLUSTER REPLICATE', self.cluster.nodes[1].name)
+
     def test_distribute_error(self):
         solver = MaxFlowSolver.from_nodes(
             self.cluster.nodes, self.new_nodes[:2])
