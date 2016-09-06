@@ -50,7 +50,7 @@ class AddSlavesManager(object):
                 'role': 'slave',
                 'master': master.name,
             })
-        self.cluster.add_nodes(nodes)
+        self.cluster.add_slaves(nodes)
         self.cluster.wait()
 
     def get_distribution(self):

@@ -4,6 +4,7 @@ import redis
 import socket
 import time
 import logging
+from collections import defaultdict
 
 try:
     import urlparse
@@ -344,10 +345,69 @@ class Cluster(object):
         whose value is an instance of ClusterNode,
         it will be used directly.
         '''
+        new_nodes, master_map = self._add_nodes_as_master(nodes)
+
+        for n in new_nodes:
+            if n.name not in master_map:
+                continue
+            master_name = master_map[n.name]
+            target = self.get_node(master_name)
+            if not target:
+                raise NodeNotFound(master_name)
+            n.replicate(target.name)
+            n.flush_cache()
+            target.flush_cache()
+
+    def add_slaves(self, new_slaves):
+        '''This is almost the same with `add_nodes`.
+        The difference is only after the current slave has finshed its sync,
+        will the next slave on the same host start replication.
+        This is mainly used to avoid huge overhead caused by full sync
+        when large amount of slaves are added to cluster.
+        '''
+        new_nodes, master_map = self._add_nodes_as_master(new_slaves)
+
+        slaves = defaultdict(list)
+        for s in new_nodes:
+            slaves[s.host].append(s)
+
+        waiting = set()
+        while len(slaves) > 0:
+            for host in slaves.keys():
+                slave_list = slaves[host]
+                s = slave_list[0]
+
+                if s not in waiting:
+                    master_name = master_map[s.name]
+                    target = self.get_node(master_name)
+                    if not target:
+                        raise NodeNotFound(master_name)
+                    s.replicate(target.name)
+                    waiting.add(s)
+                    continue
+
+                role = s.execute_command('ROLE')
+                # role[3] being changed to 'connected' means sync is finished
+                if role[0] == 'master' or role[3] != 'connected':
+                    continue
+
+                waiting.remove(s)
+                slave_list.pop(0)
+                if len(slave_list) == 0:
+                    slaves.pop(host)
+
+            if len(waiting) > 0:
+                waiting_list = ['{}:{}'.format(n.host, n.port) for n in waiting]
+                logger.info('sync waiting list: {}'.format(waiting_list))
+            time.sleep(1)
+
+    def _add_nodes_as_master(self, nodes):
         assert all(map(
             lambda n: n['role'] == 'master' or 'master' in n, nodes))
         new_nodes = [n.get('cluster_node') or ClusterNode.from_uri(n['addr']) \
             for n in nodes]
+        master_map = {a.name: b['master'] \
+            for a, b in zip(new_nodes, nodes) if b.get('master')}
         cluster_member = self.nodes[0]
         check_new_nodes(new_nodes, [cluster_member])
 
@@ -357,16 +417,7 @@ class Cluster(object):
         self.wait()
         self.nodes.extend(new_nodes)
 
-        assert len(nodes) == len(new_nodes)
-        for (new, n) in zip(new_nodes, nodes):
-            if n['role'] == 'master':
-                continue
-            target = self.get_node(n['master'])
-            if not target:
-                raise NodeNotFound(n["master"])
-            new.replicate(target.name)
-            new.flush_cache()
-            target.flush_cache()
+        return new_nodes, master_map
 
     def _wait_nodes_updated(self, cluster_member, new_nodes):
         '''Sometimes even cluster_member has responded new_node.meet,

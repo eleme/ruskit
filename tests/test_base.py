@@ -24,6 +24,10 @@ NEW_NODE_RESP_LIST = {
 }
 
 
+ROLE_OUTPUT = '*5\r\n$5\r\nslave\r\n$9\r\n127.0.0.1\r\n' \
+              ':6000\r\n$9\r\nconnected\r\n:911\r\n'
+
+
 class MockRedisClient(object):
     def __init__(self, cluster_node):
         self.execute_command = MagicMock(side_effect=self.side_effect)
@@ -47,6 +51,7 @@ class MockRedisClient(object):
 
 class MockMember(MockRedisClient):
     def side_effect(self, *args, **kwargs):
+        args = [a.upper() for a in args if isinstance(a, basestring)]
         if args[0] == 'CLUSTER NODES':
             param = {
                 6000: ('myself,', '', ''),
@@ -66,6 +71,7 @@ class MockMember(MockRedisClient):
 
 class MockNewNode(MockRedisClient):
     def side_effect(self, *args, **kwargs):
+        args = [a.upper() for a in args if isinstance(a, basestring)]
         if args[0] == 'CLUSTER NODES':
             return NEW_NODE_RESP_LIST[self.cluster_node.port]
         if args[0] == 'INFO':
@@ -77,6 +83,8 @@ class MockNewNode(MockRedisClient):
             }
         if args[0] == 'CLUSTER INFO':
             return 'cluster_known_nodes:1'
+        if args[0] == 'ROLE':
+            return ['slave', '127.0.0.1', 6000, 'connected', 2521]
         return MagicMock()
 
 
