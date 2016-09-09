@@ -51,6 +51,10 @@ class ClusterNode(object):
         self.retry = retry
         self.r = redis.Redis(host, port, socket_timeout=socket_timeout)
         self._cached_node_info = None
+        self._cached_nodes = None
+
+    def gen_addr(self):
+        return '{}:{}'.format(self.host, self.port)
 
     @classmethod
     def from_uri(cls, uri):
@@ -105,6 +109,7 @@ class ClusterNode(object):
         return self.node_info["slots"]
 
     def flush_cache(self):
+        self._cached_nodes = None
         self._cached_node_info = None
 
     @property
@@ -174,6 +179,11 @@ class ClusterNode(object):
     def nodes(self):
         info = self.execute_command("CLUSTER NODES").strip()
         return self._parse_node(info)
+
+    def nodes_with_cache(self):
+        if self._cached_nodes is None:
+            self._cached_nodes = self.nodes()
+        return self._cached_nodes
 
     def cluster_info(self):
         data = {}

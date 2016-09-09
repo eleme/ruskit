@@ -50,6 +50,10 @@ class MockRedisClient(object):
 
 
 class MockMember(MockRedisClient):
+    def __init__(self, cluster_node):
+        super(MockMember, self).__init__(cluster_node)
+        self.cluster_node_resp = CLUSTER_NODES_RESP
+
     def side_effect(self, *args, **kwargs):
         args = [a.upper() for a in args if isinstance(a, basestring)]
         if args[0] == 'CLUSTER NODES':
@@ -58,7 +62,7 @@ class MockMember(MockRedisClient):
                 6001: ('', 'myself,', ''),
                 6002: ('', '', 'myself,'),
             }
-            return CLUSTER_NODES_RESP.format(
+            return self.cluster_node_resp.format(
                 *param[self.cluster_node.port])
         if args[0] == 'INFO':
             return {
@@ -70,6 +74,7 @@ class MockMember(MockRedisClient):
 
 
 class MockNewNode(MockRedisClient):
+
     def side_effect(self, *args, **kwargs):
         args = [a.upper() for a in args if isinstance(a, basestring)]
         if args[0] == 'CLUSTER NODES':
@@ -99,15 +104,19 @@ class TestCaseBase(unittest.TestCase):
 
     @patch_not_used
     def setUp(self):
-        uris = ['host{}:{}'.format(i, p) \
+        self.uris = ['host{}:{}'.format(i, p) \
             for i, p in enumerate(range(6000,6006))]
-        nodes = [ClusterNode.from_uri(u) for u in uris[:3]]
-        for n in nodes:
-            n.r = MockMember(n)
-        self.cluster = Cluster(nodes)
-        self.new_nodes = [ClusterNode.from_uri(u) for u in uris[3:]]
+        self.cluster = Cluster(self.gen_nodes())
+        self.new_nodes = [ClusterNode.from_uri(u) for u in self.uris[3:]]
         for n in self.new_nodes:
             n.r = MockNewNode(n)
+
+    @patch_not_used
+    def gen_nodes(self):
+        nodes = [ClusterNode.from_uri(u) for u in self.uris[:3]]
+        for n in nodes:
+            n.r = MockMember(n)
+        return nodes
 
     def assert_exec_cmd(self, node, *args, **kwargs):
         node.r.execute_command.assert_any_call(*args, **kwargs)
