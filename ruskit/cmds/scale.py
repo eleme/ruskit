@@ -41,7 +41,7 @@ class AddSlavesManager(object):
             'frees': frees,
         }
 
-    def add_slaves(self):
+    def add_slaves(self, fast_mode=False):
         result, frees = self.solver.distribute_slaves()
         nodes = []
         for free, master in result:
@@ -50,7 +50,7 @@ class AddSlavesManager(object):
                 'role': 'slave',
                 'master': master.name,
             })
-        self.cluster.add_slaves(nodes)
+        self.cluster.add_slaves(nodes, fast_mode)
         self.cluster.wait()
 
     def get_distribution(self):
@@ -68,6 +68,8 @@ def gen_nodes_from_args(nodes):
 @cli.argument("-p", "--peek", dest="peek", default=False, action="store_true")
 @cli.argument("-l", "--slaves-limit", dest="slaves_limit",
     default=None, type=int)
+@cli.argument("-f", "--fast-mode", dest="fast_mode", default=False,
+    action="store_true")
 @cli.argument("cluster")
 @cli.argument("nodes", nargs='+')
 @timeout_argument
@@ -87,4 +89,4 @@ def addslave(ctx, args):
         echo('after', color='purple')
         print_cluster(manager.get_distribution())
     else:
-        manager.add_slaves()
+        manager.add_slaves(fast_mode=args.fast_mode)
