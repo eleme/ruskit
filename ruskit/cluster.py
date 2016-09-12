@@ -358,12 +358,15 @@ class Cluster(object):
             n.flush_cache()
             target.flush_cache()
 
-    def add_slaves(self, new_slaves):
-        '''This is almost the same with `add_nodes`.
-        The difference is only after the current slave has finshed its sync,
-        will the next slave on the same host start replication.
+    def add_slaves(self, new_slaves, fast_mode=False):
+        '''This is almost the same with `add_nodes`. The difference is that
+        it will add slaves in two slower way.
         This is mainly used to avoid huge overhead caused by full sync
         when large amount of slaves are added to cluster.
+        If fast_mode is False, there is only one master node doing
+        replication at the same time.
+        If fast_mode is True, only after the current slave has finshed
+        its sync, will the next slave on the same host start replication.
         '''
         new_nodes, master_map = self._add_nodes_as_master(new_slaves)
 
@@ -376,6 +379,9 @@ class Cluster(object):
             for host in slaves.keys():
                 slave_list = slaves[host]
                 s = slave_list[0]
+
+                if not fast_mode and len(waiting) > 0 and s not in waiting:
+                    continue
 
                 if s not in waiting:
                     master_name = master_map[s.name]
