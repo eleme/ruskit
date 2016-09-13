@@ -222,3 +222,14 @@ class TestCluster(TestCaseBase):
     @patch.object(ClusterNode, 'nodes', new_callable=gen_nodes_method)
     def test_slots_consistent(self, _):
         self.assertFalse(self.cluster.consistent())
+
+    def test_hook(self):
+        node = self.cluster.nodes[0]
+        m1, m2 = mock.Mock(), mock.Mock()
+        ClusterNode.before_request_redis = m1
+        node.ping()
+        m1.assert_called()
+        ClusterNode.before_request_redis = m2
+        node.nodes()
+        m2.assert_called()
+        ClusterNode.before_request_redis = None
