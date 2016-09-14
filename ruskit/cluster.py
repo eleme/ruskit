@@ -368,7 +368,7 @@ class Cluster(object):
         If fast_mode is True, only after the current slave has finshed
         its sync, will the next slave on the same host start replication.
         '''
-        new_nodes, master_map = self._add_nodes_as_master(new_slaves)
+        new_nodes, master_map = self._prepare_for_adding(new_slaves)
 
         slaves = defaultdict(list)
         for s in new_nodes:
@@ -384,6 +384,7 @@ class Cluster(object):
                     continue
 
                 if s not in waiting:
+                    self._add_as_master(s, self.nodes[0])
                     master_name = master_map[s.name]
                     target = self.get_node(master_name)
                     if not target:
@@ -407,7 +408,7 @@ class Cluster(object):
                 logger.info('sync waiting list: {}'.format(waiting_list))
             time.sleep(1)
 
-    def _add_nodes_as_master(self, nodes):
+    def _prepare_for_adding(self, nodes):
         assert all(map(
             lambda n: n['role'] == 'master' or 'master' in n, nodes))
         new_nodes = [n.get('cluster_node') or ClusterNode.from_uri(n['addr']) \
@@ -416,6 +417,17 @@ class Cluster(object):
             for a, b in zip(new_nodes, nodes) if b.get('master')}
         cluster_member = self.nodes[0]
         check_new_nodes(new_nodes, [cluster_member])
+        return new_nodes, master_map
+
+    def _add_as_master(self, new_node, cluster_member):
+        new_node.meet(cluster_member.host, cluster_member.port)
+        self._wait_nodes_updated(cluster_member, [new_node])
+        self.wait()
+        self.nodes.append(new_node)
+
+    def _add_nodes_as_master(self, nodes):
+        new_nodes, master_map = self._prepare_for_adding(nodes)
+        cluster_member = self.nodes[0]
 
         for n in new_nodes:
             n.meet(cluster_member.host, cluster_member.port)
