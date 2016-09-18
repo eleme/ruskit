@@ -43,6 +43,7 @@ class ClusterNotHealthy(RuskitException):
 
 class ClusterNode(object):
     socket_timeout = 1
+    before_request_redis = None
 
     def __init__(self, host, port, socket_timeout=None, retry=10):
         socket_timeout = socket_timeout or ClusterNode.socket_timeout
@@ -69,9 +70,14 @@ class ClusterNode(object):
         return "ClusterNode<{}:{}>".format(self.host, self.port)
 
     def __getattr__(self, attr):
+        if self.before_request_redis:
+            self.before_request_redis()
         return getattr(self.r, attr)
 
     def execute_command(self, *args, **kwargs):
+        if self.before_request_redis:
+            self.before_request_redis()
+
         i = 0
         while True:
             try:
