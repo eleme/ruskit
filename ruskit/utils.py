@@ -8,6 +8,9 @@ from functools import wraps
 from ruskit import cli
 
 
+NO_RETRY = -1
+
+
 COLOR_MAP = {
     "red": 31,
     "green": 32,

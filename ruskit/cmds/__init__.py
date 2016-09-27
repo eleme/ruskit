@@ -6,7 +6,7 @@ from .create import create as create_cmd  # name conflict with module
 from .scale import addslave
 from .manage import (
     info, fix, migrate, delete, reshard, replicate, destroy, flushall, slowlog,
-    reconfigure, peek
+    reconfigure, peek, check
     )
 
 
@@ -26,6 +26,7 @@ def gen_parser():
     parser.add_command(flushall)
     parser.add_command(peek)
     parser.add_command(addslave)
+    parser.add_command(check)
     return parser
 
 

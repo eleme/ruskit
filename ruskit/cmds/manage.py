@@ -2,12 +2,14 @@
 
 import datetime
 import redis
+import pprint
 
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
 from ..utils import echo
 from ..distribute import print_cluster, gen_distribution
 from ..utils import timeout_argument
+from ..health import HealthCheckManager
 
 
 @cli.command
@@ -183,3 +185,22 @@ def peek(ctx, args):
         ctx.abort("Cluster not consistent.")
     dist = gen_distribution(cluster.nodes, [])
     print_cluster(dist)
+
+
+@cli.command
+@cli.argument("nodes", nargs='+')
+@timeout_argument
+@cli.pass_ctx
+def check(ctx, args):
+    nodes = [ClusterNode.from_uri(n) for n in args.nodes]
+    report = HealthCheckManager(nodes).check()
+
+    if report is None:
+        print 'cluster is healthy'
+        return
+
+    for check_name, diff in report.iteritems():
+        print '#' * 30
+        print check_name
+        print '#' * 30
+        pprint.pprint(diff)
