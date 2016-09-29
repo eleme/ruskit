@@ -280,8 +280,11 @@ class Cluster(object):
         return len(slots) == CLUSTER_HASH_SLOTS and self.consistent()
 
     def wait(self):
+        start = time.time()
         while not self.consistent():
             time.sleep(1)
+        logger.info('cluster took {} seconds to become consistent'.format(
+            time.time() - start))
 
         if not self.healthy():
             raise ClusterNotHealthy("Error: missing slots")
