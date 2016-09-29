@@ -3,7 +3,7 @@ import redis
 from mock import patch
 
 from test_base import TestCaseBase
-from ruskit.cluster import Cluster, ClusterNode
+from ruskit.cluster import Cluster, ClusterNode, ActionStopped
 
 
 class MockNode(object):
@@ -233,3 +233,9 @@ class TestCluster(TestCaseBase):
         node.nodes()
         m2.assert_called()
         ClusterNode.before_request_redis = None
+
+    def test_gracefully_stop_migration(self):
+        cluster = self.cluster
+        cluster.set_stop_checking_hook(lambda: True)
+        with self.assertRaises(ActionStopped):
+            cluster.migrate(cluster.nodes[0], cluster.nodes[1], 1)
