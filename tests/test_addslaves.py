@@ -1,6 +1,6 @@
 from mock import patch
 
-from ruskit.cluster import ClusterNode, Cluster
+from ruskit.cluster import ClusterNode, Cluster, ActionStopped
 from ruskit.distribute import MaxFlowSolver, DistributionError
 from test_base import TestCaseBase, MockNewNode
 
@@ -65,3 +65,14 @@ class TestAddSlaves(TestCaseBase):
         result, frees = solver.distribute_slaves()
         self.assertEqual(len(frees), 0)
         self.assertEqual(len(result), 3)
+
+    def test_gracefully_stop_adding_slaves(self):
+        new = self.new_nodes[0]
+        cluster = self.cluster
+        cluster.set_stop_checking_hook(lambda: True)
+        with self.assertRaises(ActionStopped):
+            cluster.add_slaves([{
+                'cluster_node': new,
+                'role': 'slave',
+                'master': self.cluster.nodes[1].name,
+            }])

@@ -240,9 +240,17 @@ class ClusterNode(object):
         return data
 
 
+class ActionStopped(Exception):
+    pass
+
+
 class Cluster(object):
     def __init__(self, nodes):
         self.nodes = nodes
+        self.check_action_stopped = lambda: False
+
+    def set_stop_checking_hook(self, hook):
+        self.check_action_stopped = hook
 
     @classmethod
     def from_node(cls, node):
@@ -396,6 +404,9 @@ class Cluster(object):
         waiting = set()
         while len(slaves) > 0:
             for host in slaves.keys():
+                if self.check_action_stopped():
+                    logger.warning('Slaves adding was stopped, ' \
+                        'waiting for the last slave to be finished')
                 slave_list = slaves[host]
                 s = slave_list[0]
 
@@ -403,11 +414,14 @@ class Cluster(object):
                     continue
 
                 if s not in waiting:
-                    self._add_as_master(s, self.nodes[0])
+                    if self.check_action_stopped():
+                        raise ActionStopped(
+                            'Slaves adding was successfully stopped')
                     master_name = master_map[s.name]
                     target = self.get_node(master_name)
                     if not target:
                         raise NodeNotFound(master_name)
+                    self._add_as_master(s, self.nodes[0])
                     s.replicate(target.name)
                     waiting.add(s)
                     continue
@@ -530,6 +544,9 @@ class Cluster(object):
             self.migrate(src, dst, count)
 
     def migrate_slot(self, src, dst, slot, timeout=15000, verbose=True):
+        if self.check_action_stopped():
+            raise ActionStopped('Slot migration was successfully stopped')
+
         dst.setslot("IMPORTING", slot, src.name)
         src.setslot("MIGRATING", slot, dst.name)
         for key in _scan_keys(src, slot):
