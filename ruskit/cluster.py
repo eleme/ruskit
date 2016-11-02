@@ -4,6 +4,7 @@ import redis
 import socket
 import time
 import logging
+import functools
 from collections import defaultdict
 
 try:
@@ -14,6 +15,8 @@ except ImportError:
 from .utils import echo, divide, check_new_nodes, RuskitException
 
 CLUSTER_HASH_SLOTS = 16384
+BUSY_MAX_RETRY_TIMES = 10
+BUSY_SLEEP_SECONDS = 3
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +30,22 @@ def _scan_keys(node, slot, count=10):
             break
         for key in keys:
             yield key
+
+
+def retry_when_busy_loading(func):
+    @functools.wraps(func)
+    def _wrapper(*args, **kwargs):
+        retry = 0
+        while True:
+            try:
+                return func(*args, **kwargs)
+            except redis.BusyLoadingError as e:
+                if retry >= BUSY_MAX_RETRY_TIMES:
+                    raise
+                logger.warning(e)
+                retry += 1
+                time.sleep(BUSY_SLEEP_SECONDS)
+    return _wrapper
 
 
 class NodeNotFound(RuskitException):
@@ -182,6 +201,7 @@ class ClusterNode(object):
         args = ["FORCE"] if force else ["TAKEOVER"]
         return self.execute_command("CLUSTER FAILOVER", *args)
 
+    @retry_when_busy_loading
     def nodes(self):
         info = self.execute_command("CLUSTER NODES").strip()
         return self._parse_node(info)
@@ -287,6 +307,7 @@ class Cluster(object):
         slots = list(itertools.chain(*[i.slots for i in self.nodes]))
         return len(slots) == CLUSTER_HASH_SLOTS and self.consistent()
 
+    @retry_when_busy_loading
     def wait(self):
         start = time.time()
         while not self.consistent():

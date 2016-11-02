@@ -93,12 +93,12 @@ def check_new_nodes(new_nodes, old_nodes=None):
         info = instance.info()
         if not info.get("cluster_enabled"):
             raise InvalidNewNode("cluster not enabled")
-        if info.get("db0"):
-            raise InvalidNewNode("data exists in db0 of {}".format(instance))
         if instance.cluster_info()["cluster_known_nodes"] != 1:
             raise InvalidNewNode(
                 "node {}:{} belong to other cluster".format(
                     instance.host, instance.port))
+        if info.get("db0"):
+            raise InvalidNewNode("data exists in db0 of {}".format(instance))
         versions.add(info['redis_version'])
     if len(versions) != 1:
         raise InvalidNewNode(
