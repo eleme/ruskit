@@ -16,6 +16,9 @@ class NodeWrapper(object):
     def __getattr__(self, attr):
         return getattr(self.node, attr)
 
+    def __repr__(self):
+        return '<NodeWrapper {}:{}>'.format(self.node.host, self.node.port)
+
 
 class DistributionError(Exception):
     def __init__(self, missing):

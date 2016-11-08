@@ -1,6 +1,7 @@
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
 from ..distribute import MaxFlowSolver, print_cluster, gen_distribution
+from ..failover import FastAddMachineManager
 from ..utils import echo, timeout_argument
 
 
@@ -90,3 +91,27 @@ def addslave(ctx, args):
         print_cluster(manager.get_distribution())
     else:
         manager.add_slaves(fast_mode=args.fast_mode)
+
+
+@cli.command
+@cli.argument("-p", "--peek", dest="peek", default=False, action="store_true")
+@cli.argument("-f", "--fast-mode", dest="fast_mode", default=False,
+    action="store_true")
+@cli.argument("cluster")
+@cli.argument("nodes", nargs='+')
+@timeout_argument
+@cli.pass_ctx
+def movemaster(ctx, args):
+    new_nodes = gen_nodes_from_args(args.nodes)
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+
+    if not cluster.healthy():
+        logger.warn('Cluster not healthy.')
+
+    manager = FastAddMachineManager(cluster, new_nodes)
+    if args.peek:
+        print_cluster(manager.get_distribution())
+        result = manager.peek_result()
+        print 'plan: ', result['plan']
+    else:
+        manager.move_masters_to_new_hosts(fast_mode=args.fast_mode)
