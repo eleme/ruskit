@@ -28,7 +28,27 @@ class DistributionError(Exception):
         return 'not all masters have slaves: {}'.format(self.missing)
 
 
-class MaxFlowSolver(object):
+class MaxFlowBase(object):
+    def __init__(self, host_count):
+        self.vertex_count = 2 * host_count + 2
+        self.s = self.vertex_count - 2
+        self.t = self.vertex_count - 1
+
+    def _gen_graph(self):
+        # make it lazy to support optional addslaves command
+        from igraph import Graph
+        g = Graph().as_directed()
+        g.add_vertices(self.vertex_count)
+        g.es['weight'] = 1  # enable weight
+        return g
+
+    @staticmethod
+    def _sort_masters(masters):
+        for ms in masters:
+            ms.sort(key=lambda m: len(m.slaves))
+
+
+class MaxFlowSolver(MaxFlowBase):
     '''Slaves distribution problem can be converted to max flow problem'''
 
     @classmethod
@@ -54,20 +74,10 @@ class MaxFlowSolver(object):
         for ss in slaves:
             self.slice_tags.append([s.master.tag for s in ss])
 
-        self.vertex_count = 2 * host_count + 2
-        self.s = self.vertex_count - 2
-        self.t = self.vertex_count - 1
+        super(MaxFlowSolver, self).__init__(host_count)
         self.result = []
         self.finished = False
         self.max_slaves_limit = max_slaves_limit
-
-    def _gen_graph(self):
-        # make it lazy to support optional addslaves command
-        from igraph import Graph
-        g = Graph().as_directed()
-        g.add_vertices(self.vertex_count)
-        g.es['weight'] = 1  # enable weight
-        return g
 
     def get_distribution(self):
         return {
@@ -156,7 +166,7 @@ class MaxFlowSolver(object):
                 g[i, ct + j] = min(len(self.frees[i]), limit)
         mf = g.maxflow(self.s, self.t, g.es['weight'])
 
-        self._sort_masters()
+        self._sort_masters(self.masters)
         for edge_index, e in enumerate(g.es):
             if e.source == self.s or e.target == self.t:
                 continue
@@ -181,10 +191,6 @@ class MaxFlowSolver(object):
                 max(self.max_slaves_limit - len(m.slaves), 0) \
                 for m in masters))
         return limits
-
-    def _sort_masters(self):
-        for masters in self.masters:
-            masters.sort(key=lambda m: len(m.slaves))
 
 
 def gen_distribution(nodes, new_nodes):
@@ -246,3 +252,86 @@ def print_cluster(distribution):
         for c in line:
             echo(fmt.format(c), color=color_map.get(c[0]) or None, end='')
         print ''
+
+
+class RearrangeSlaveManager(MaxFlowBase):
+    '''Change all masters to have exactly one slave'''
+    def __init__(self, cluster, new_nodes):
+        self.cluster = cluster
+        self.new_nodes = new_nodes
+        self.result = None
+        self.dis = gen_distribution(self.cluster.nodes, self.new_nodes)
+        super(RearrangeSlaveManager, self).__init__(len(self.dis['hosts']))
+
+    def gen_plan(self):
+        if self.result:
+            return self.result
+
+        add_plan = []
+        delete_plan = []
+        hosts = self.dis['hosts']
+        masters = self.dis['masters']
+        slaves = self.dis['slaves']
+        frees = self.dis['frees']
+        ct = len(hosts)
+        masters_per_host = (len(sum(masters, [])) + ct - 1) / ct
+        limit = 1 + masters_per_host / ct
+
+        # first assume that there is no slave for every master
+        g = self._gen_graph()
+        flow_in = map(len, frees)
+        flow_out = map(len, masters)
+        for i, c in enumerate(flow_in):
+            g[self.s, i] = c
+        for i, c in enumerate(flow_out):
+            g[i + ct, self.t] = c
+        for i in xrange(ct):
+            for j in xrange(ct):
+                if i == j:
+                    continue
+                g[i, ct + j] = min(len(frees[i]), limit, len(masters[j]))
+        mf = g.maxflow(self.s, self.t, g.es['weight'])
+
+        curr_map = self._gen_curr_map()
+        edges = []
+        for edge_index, e in enumerate(g.es):
+            if e.source == self.s or e.target == self.t:
+                continue
+            i, j = e.source, e.target - ct
+            flow = int(mf.flow[edge_index])
+            edges.append((i, j, flow))
+
+        # delete redundant slaves
+        for i, j, flow in edges:
+            if curr_map[i][j] > flow:
+                deleted_num = curr_map[i][j] - flow
+                deleted_slaves = [s for s in slaves[i] \
+                    if s.master.host_index == j][:deleted_num]
+                for s in deleted_slaves:
+                    s.master.slaves.remove(s)
+                delete_plan.extend(deleted_slaves)
+
+        self._sort_masters(masters)
+        for i, j, flow in edges:
+            for _ in xrange(max(0, flow - curr_map[i][j])):
+                # add slaves
+                m = masters[j].pop(0)
+                if len(m.slaves) > 0:
+                    break
+                f = frees[i].pop(0)
+                m.slaves.append(f)
+                add_plan.append({'slave': f, 'master': m})
+
+        return {
+            'add_plan': add_plan,
+            'delete_plan': delete_plan,
+            'frees': frees
+        }
+
+    def _gen_curr_map(self):
+        hosts_num = len(self.dis['hosts'])
+        curr_graph = [list(repeat(0, hosts_num)) for _ in xrange(hosts_num)]
+        for i, slaves in enumerate(self.dis['slaves']):
+            for s in slaves:
+                curr_graph[i][s.master.host_index] += 1
+        return curr_graph

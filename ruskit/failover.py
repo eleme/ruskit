@@ -13,19 +13,17 @@ logger.addHandler(logging.NullHandler())
 
 class FastAddMachineManager(object):
     def __init__(self, cluster, new_nodes):
-        self.plan = []
         self.cluster = cluster
         self.new_nodes = new_nodes
+        self.result = None
 
     def get_distribution(self):
         return gen_distribution(self.cluster.nodes, self.new_nodes)
 
     def peek_result(self):
-        plan, frees = self.gen_plan(self.new_nodes)
-        return {
-            'plan': plan,
-            'frees': frees,
-        }
+        if self.result:
+            return result
+        return self.gen_plan(self.new_nodes)
 
     def move_masters_to_new_hosts(self, fast_mode=False):
         plan, frees = self.gen_plan(self.new_nodes)
@@ -64,9 +62,7 @@ class FastAddMachineManager(object):
                 'The nodes below are still slaves: {}'.format(new_masters))
 
     def gen_plan(self, new_nodes):
-        if self.plan:
-            return self.plan
-
+        plan = []
         dis = gen_distribution(self.cluster.nodes, new_nodes)
         masters = dis['masters']
         frees = filter(None, dis['frees'])
@@ -79,8 +75,12 @@ class FastAddMachineManager(object):
         while len(failover_masters) > 0 and len(frees) > 0:
             m = failover_masters.pop()
             f = frees.pop()
-            self.plan.append({
+            plan.append({
                 'slave': f,
                 'master': m,
             })
-        return self.plan, frees
+        self.result = {
+            'plan': plan,
+            'frees': frees,
+        }
+        return self.result
