@@ -14,6 +14,13 @@ class NodeWrapper(object):
         self.master = master
         self.slaves = []
 
+    @classmethod
+    def divide_by_host(cls, nodes, host_num):
+        nodes_per_host = [[] for _ in xrange(host_num)]
+        for n in nodes:
+            nodes_per_host[n.host_index].append(n)
+        return nodes_per_host
+
     def __getattr__(self, attr):
         return getattr(self.node, attr)
 

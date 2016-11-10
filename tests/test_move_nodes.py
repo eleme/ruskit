@@ -15,17 +15,18 @@ class DummyCluster(object):
 def dummy_gen_distribution_for_move_masters(nodes, new_nodes):
     hosts = ['host1', 'host2', 'host3', 'host4']
     masters = [
-        ['m1', 'm2', 'm3'],
-        ['m4', 'm5', 'm6', 'm10', 'm11'],
-        ['m7', 'm8', 'm9'],
+        [NodeWrapper(i, 'm{}'.format(i), 0) for i in range(1, 4)],
+        [NodeWrapper(i, 'm{}'.format(i), 1) for i in range(4, 9)],
+        [NodeWrapper(i, 'm{}'.format(i), 2) for i in range(9, 11)],
         [],
     ]
     slaves = [
-        ['s1'],
-        ['s2'],
-        ['s3'],
+        [NodeWrapper(None, 's1', 1)],
+        [NodeWrapper(None, 's2', 2)],
+        [NodeWrapper(None, 's3', 3)],
+        [],
     ]
-    frees = [[], [], [], ['f1', 'f2']]
+    frees = [[], [], [], [NodeWrapper(i, 'f{}'.format(i), 3) for i in range(1, 3)]]
     return {
         'hosts': hosts,
         'masters': masters,
@@ -92,12 +93,20 @@ class TestMoveNode(TestCaseBase):
         plan = result['plan']
         p1 = plan[0]
         p2 = plan[1]
-        if p1['master'] != 'm11':
+        if p1['master'].tag != 'm8':
             p1, p2 = p2, p1
-        self.assertEqual(p1['master'], 'm11')
-        self.assertEqual(p1['slave'], 'f2')
-        self.assertEqual(p2['master'], 'm10')
-        self.assertEqual(p2['slave'], 'f1')
+        slaves = ('f1', 'f2')
+        self.assertEqual(p1['master'].tag, 'm8')
+        self.assertTrue(p1['slave'].tag in slaves)
+        self.assertEqual(p2['master'].tag, 'm7')
+        self.assertTrue(p2['slave'].tag in slaves)
+
+        dis = manager.get_distribution()
+        masters = dis['masters']
+        masters_num = list(set(map(len, masters)))
+        self.assertTrue(len(masters_num) <= 2)
+        if len(masters_num) == 2:
+            self.assertTrue(abs(masters_num[0] - masters_num[1]) <= 1)
 
     @patch('ruskit.distribute.gen_distribution',
         MoveSlavesMockData.dummy_gen_distribution)
