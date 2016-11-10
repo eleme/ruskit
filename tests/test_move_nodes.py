@@ -1,3 +1,5 @@
+import copy
+
 from mock import patch
 
 from ruskit.failover import FastAddMachineManager
@@ -50,8 +52,9 @@ class MoveSlavesMockData(object):
                               for i in range(1, 8))
     s1.host_index = 0
     s6.host_index = 2
+    s7.host_index = 2
     slaves = [
-        [s1], [s2, s3, s4, s5], [s6], []
+        [s1], [s2, s3, s4, s5], [s6, s7], []
     ]
     s1.master, s2.master, s3.master, s4.master = m7, m1, m9, m11
     s5.master, s6.master, s7.master = m2, m8, m5
@@ -66,16 +69,16 @@ class MoveSlavesMockData(object):
         [NodeWrapper(None, 'f{}'.format(i), 0) for i in range(1, 5)],
         [NodeWrapper(None, 'f{}'.format(i), 1) for i in range(5, 8)],
         [NodeWrapper(None, 'f{}'.format(i), 2) for i in range(8, 12)],
-        [NodeWrapper(None, 'f{}'.format(i), 3) for i in range(12, 15)],
+        [NodeWrapper(None, 'f{}'.format(i), 3) for i in range(12, 16)],
     ]
 
     @classmethod
     def dummy_gen_distribution(cls, nodes, new_nodes):
         return {
-            'hosts': cls.hosts,
-            'masters': cls.masters,
-            'slaves': cls.slaves,
-            'frees': cls.frees,
+            'hosts': map(copy.copy, cls.hosts),
+            'masters': map(copy.copy, cls.masters),
+            'slaves': map(copy.copy, cls.slaves),
+            'frees': map(copy.copy, cls.frees),
         }
 
 
@@ -113,4 +116,19 @@ class TestMoveNode(TestCaseBase):
             slave = p['slave']
             master = p['master']
             slaves_of_master[master.node-1] += 1
+        # All masters should have exactly one slave
         self.assertTrue(all(map(lambda s: s == 1, slaves_of_master)))
+        dis = MoveSlavesMockData.dummy_gen_distribution(None, None)
+        masters_per_host = [len(m) for m in dis['masters']]
+        slaves_per_host = [len(set(s) - set(delete_plan)) \
+            for s in dis['slaves']]
+        new_slaves_per_host = [0 for _ in range(len(dis['hosts']))]
+        for p in add_plan:
+            new_slaves_per_host[p['slave'].host_index] += 1
+        nodes_per_host = map(sum, zip(
+            masters_per_host, slaves_per_host, new_slaves_per_host))
+        # All hosts should contains almost the same number of nodes
+        nodes_num = list(set(nodes_per_host))
+        self.assertTrue(len(nodes_num) <= 2)
+        if (len(nodes_num) == 2):
+            self.assertTrue(abs(nodes_num[0] - nodes_num[1]) <= 1)

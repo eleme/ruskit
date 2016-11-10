@@ -17,7 +17,10 @@ class NodeWrapper(object):
         return getattr(self.node, attr)
 
     def __repr__(self):
-        return '<NodeWrapper {}:{}>'.format(self.node.host, self.node.port)
+        if self.master:
+            return '<NodeWrapper {} -> {}>'.format(self.tag, self.master.tag)
+        else:
+            return '<NodeWrapper {}>'.format(self.tag)
 
 
 class DistributionError(Exception):
@@ -311,15 +314,16 @@ class RearrangeSlaveManager(MaxFlowBase):
                     s.master.slaves.remove(s)
                 delete_plan.extend(deleted_slaves)
 
+        # add new slaves
         self._sort_masters(masters)
         for i, j, flow in edges:
             for _ in xrange(max(0, flow - curr_map[i][j])):
-                # add slaves
                 m = masters[j].pop(0)
                 if len(m.slaves) > 0:
                     break
                 f = frees[i].pop(0)
                 m.slaves.append(f)
+                f.master = m
                 add_plan.append({'slave': f, 'master': m})
 
         return {
