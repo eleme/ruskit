@@ -3,7 +3,7 @@ import logging
 from ..cli import CommandParser
 from .add import add as add_cmd  # name conflict with module
 from .create import create as create_cmd  # name conflict with module
-from .scale import addslave, movemaster
+from .scale import addslave, movemaster, moveslave
 from .manage import (
     info, fix, migrate, delete, reshard, replicate, destroy, flushall, slowlog,
     reconfigure, peek, check
@@ -28,6 +28,7 @@ def gen_parser():
     parser.add_command(addslave)
     parser.add_command(check)
     parser.add_command(movemaster)
+    parser.add_command(moveslave)
     return parser
 
 

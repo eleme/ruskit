@@ -1,6 +1,9 @@
+from itertools import repeat
+
 from ruskit import cli
 from ..cluster import Cluster, ClusterNode
-from ..distribute import MaxFlowSolver, print_cluster, gen_distribution
+from ..distribute import (MaxFlowSolver, print_cluster, gen_distribution,
+    RearrangeSlaveManager)
 from ..failover import FastAddMachineManager
 from ..utils import echo, timeout_argument
 
@@ -65,6 +68,59 @@ def gen_nodes_from_args(nodes):
     return new_nodes
 
 
+class MoveSlaveManager(object):
+    def __init__(self, cluster, new_nodes, fast_mode=False):
+        self.cluster = cluster
+        self.new_nodes = new_nodes
+        self.fast_mode = fast_mode
+        self.manager = RearrangeSlaveManager(cluster, new_nodes)
+
+    def peek_result(self):
+        plan = self.manager.gen_plan()
+        delete_plan = plan['delete_plan']
+        add_plan = plan['add_plan']
+        dis = self.manager.dis
+        masters = dis['masters']
+        old_slaves = dis['slaves']
+        old_slaves = [list(set(s) - set(delete_plan)) for s in old_slaves]
+        new_slaves = [[] for _ in xrange(len(masters))]
+        for plan in add_plan:
+            slave = plan['slave']
+            new_slaves[slave.host_index].append(slave)
+        return {
+            'hosts': dis['hosts'],
+            'masters': masters,
+            'slaves': [o + n for o, n in zip(old_slaves, new_slaves)],
+            'frees': list(repeat([], len(masters))),
+        }
+
+    def move_slaves(self):
+        plan = self.manager.gen_plan()
+        if self.fast_mode:
+            self.delete_slaves(plan['delete_plan'])
+            self.add_slaves(plan['add_plan'])
+        else:
+            self.add_slaves(plan['add_plan'])
+            self.delete_slaves(plan['delete_plan'])
+
+    def delete_slaves(self, delete_plan):
+        for slave in delete_plan:
+            self.cluster.delete_node(slave)
+
+    def add_slaves(self, add_plan):
+        nodes = []
+        for plan in add_plan:
+            free = plan['slave']
+            master = plan['master']
+            nodes.append({
+                'cluster_node': free.node,
+                'role': 'slave',
+                'master': master.name,
+            })
+        self.cluster.add_slaves(nodes, self.fast_mode)
+        self.cluster.wait()
+
+
 @cli.command
 @cli.argument("-p", "--peek", dest="peek", default=False, action="store_true")
 @cli.argument("-l", "--slaves-limit", dest="slaves_limit",
@@ -100,8 +156,7 @@ def addslave(ctx, args):
 @cli.argument("cluster")
 @cli.argument("nodes", nargs='+')
 @timeout_argument
-@cli.pass_ctx
-def movemaster(ctx, args):
+def movemaster(args):
     new_nodes = gen_nodes_from_args(args.nodes)
     cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
 
@@ -115,3 +170,24 @@ def movemaster(ctx, args):
         print 'plan: ', result['plan']
     else:
         manager.move_masters_to_new_hosts(fast_mode=args.fast_mode)
+
+
+@cli.command
+@cli.argument("-p", "--peek", dest="peek", default=False, action="store_true")
+@cli.argument("-f", "--fast-mode", dest="fast_mode", default=False,
+    action="store_true")
+@cli.argument("cluster")
+@cli.argument("nodes", nargs='+')
+@timeout_argument
+def moveslave(args):
+    new_nodes = gen_nodes_from_args(args.nodes)
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+
+    if not cluster.healthy():
+        logger.warn('Cluster not healthy.')
+
+    manager = MoveSlaveManager(cluster, new_nodes, args.fast_mode)
+    if args.peek:
+        print_cluster(manager.peek_result())
+    else:
+        manager.move_slaves()

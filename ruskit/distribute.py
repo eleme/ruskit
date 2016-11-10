@@ -1,4 +1,5 @@
 import operator
+from copy import copy
 from itertools import imap, repeat, izip_longest
 
 from .cluster import Cluster, ClusterNode
@@ -17,6 +18,15 @@ class NodeWrapper(object):
         return getattr(self.node, attr)
 
     def __repr__(self):
+        if not (hasattr(self.node, 'host') and hasattr(self.node, 'port')):
+            return self.debug_repr()  # for mock node
+        if self.master:
+            return '<NodeWrapper {} -> {}>'.format(self.node.gen_addr(),
+                                                   self.master.gen_addr())
+        else:
+            return '<NodeWrapper {}>'.format(self.node.gen_addr())
+
+    def debug_repr(self):
         if self.master:
             return '<NodeWrapper {} -> {}>'.format(self.tag, self.master.tag)
         else:
@@ -24,11 +34,19 @@ class NodeWrapper(object):
 
 
 class DistributionError(Exception):
+    pass
+
+
+class MissingSlaves(DistributionError):
     def __init__(self, missing):
         self.missing = missing
 
     def __str__(self):
         return 'not all masters have slaves: {}'.format(self.missing)
+
+
+class InvalidMasterDistribution(DistributionError):
+    pass
 
 
 class MaxFlowBase(object):
@@ -118,7 +136,7 @@ class MaxFlowSolver(MaxFlowBase):
         mf = g.maxflow(self.s, self.t, g.es['weight'])
         if mf.value < self.orphans_count:
             missing = self._gen_hosts_missing_slaves(g, mf)
-            raise DistributionError(missing)
+            raise MissingSlaves(missing)
 
         for edge_index, e in enumerate(g.es):
             if e.source == self.s or e.target == self.t:
@@ -266,16 +284,27 @@ class RearrangeSlaveManager(MaxFlowBase):
         self.dis = gen_distribution(self.cluster.nodes, self.new_nodes)
         super(RearrangeSlaveManager, self).__init__(len(self.dis['hosts']))
 
+    def check_masters_distribution():
+        masters_per_host = [len(m) for m in self.dis['masters']]
+        masters_num = list(set(masters_per_host))
+        if len(nodes_num) > 2:
+            raise InvalidMasterDistribution()
+        if len(nodes_num == 2) and abs(nodes_num[0] - nodes_num[1]) > 1:
+            raise InvalidMasterDistribution()
+
+    def gen_distribution(self):
+        return gen_distribution(self.cluster.nodes, self.new_nodes)
+
     def gen_plan(self):
         if self.result:
             return self.result
 
         add_plan = []
         delete_plan = []
-        hosts = self.dis['hosts']
-        masters = self.dis['masters']
-        slaves = self.dis['slaves']
-        frees = self.dis['frees']
+        hosts = map(copy, self.dis['hosts'])
+        masters = map(copy, self.dis['masters'])
+        slaves = map(copy, self.dis['slaves'])
+        frees = map(copy, self.dis['frees'])
         ct = len(hosts)
         masters_per_host = (len(sum(masters, [])) + ct - 1) / ct
         limit = 1 + masters_per_host / ct
@@ -326,6 +355,7 @@ class RearrangeSlaveManager(MaxFlowBase):
                 f.master = m
                 add_plan.append({'slave': f, 'master': m})
 
+        self.assert_plan(delete_plan, add_plan)
         return {
             'add_plan': add_plan,
             'delete_plan': delete_plan,
@@ -339,3 +369,12 @@ class RearrangeSlaveManager(MaxFlowBase):
             for s in slaves:
                 curr_graph[i][s.master.host_index] += 1
         return curr_graph
+
+    def assert_plan(self, delete_plan, add_plan):
+        dis = gen_distribution(self.cluster.nodes, self.new_nodes)
+        slaves = sum(dis['slaves'], [])
+        masters = sum(dis['masters'], [])
+
+        slaves_num = len(slaves) - len(delete_plan) + len(add_plan)
+        if slaves_num != len(masters):
+            raise DistributionError()

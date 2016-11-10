@@ -26,7 +26,8 @@ class FastAddMachineManager(object):
         return self.gen_plan(self.new_nodes)
 
     def move_masters_to_new_hosts(self, fast_mode=False):
-        plan, frees = self.gen_plan(self.new_nodes)
+        result = self.gen_plan(self.new_nodes)
+        plan = result['plan']
         logger.info('move plan: {}'.format(plan))
         self.add_tmp_slaves(plan, fast_mode)
         self.promote_new_masters(plan)
