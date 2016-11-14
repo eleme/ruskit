@@ -97,16 +97,11 @@ class FastAddMachineManager(object):
         plan = []
         masters = map(copy, self.dis['masters'])
         frees = filter(None, map(copy, self.dis['frees']))
-        hosts_len = len(self.dis['hosts'])
-        masters_sum = len(sum(masters, []))
-        aver = (masters_sum + hosts_len - 1) / hosts_len
-        new_hosts_num = len(set(n.host_index for n in sum(frees, [])))
-        num_in_old_hosts = masters_sum / \
-            hosts_len * (hosts_len - new_hosts_num) + masters_sum % hosts_len
-        moved_masters = masters_sum - num_in_old_hosts
         # merge [[a,b], [c], [d,e,f]] to [a,c,d,b,e,f] for example
         frees = filter(None, sum(map(list, izip_longest(*frees)), []))
-        while moved_masters > 0 and len(frees) > 0:
+        new_masters = {f.host_index: [] for f in frees}
+
+        while not self.check_even(masters, new_masters) and len(frees):
             m = self.select_master(masters)
             f = frees.pop(0)
             f.master = m
@@ -115,7 +110,7 @@ class FastAddMachineManager(object):
                 'slave': f,
                 'master': m,
             })
-            moved_masters -= 1
+            new_masters[f.host_index].append(f)
         self.result = {
             'plan': plan,
             'frees': frees,
@@ -127,3 +122,8 @@ class FastAddMachineManager(object):
         m = max(nums)
         i = nums.index(m)
         return masters[i].pop()
+
+    def check_even(self, masters, new_masters):
+        new_min = min(map(len, new_masters.values()))
+        old_max = max(map(len, masters))
+        return abs(old_max - new_min) <= 1
