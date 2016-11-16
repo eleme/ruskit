@@ -102,7 +102,7 @@ def test_retry(monkeypatch):
 
 
 @patch('ruskit.cmds.create.ClusterNode', MockNode)
-def test_distribute(monkeypatch):
+def test_distribute():
     from ruskit import cluster
     from ruskit.cmds.create import Manager
 

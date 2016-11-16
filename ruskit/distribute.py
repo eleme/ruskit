@@ -1,4 +1,5 @@
 import operator
+from copy import copy
 from itertools import imap, repeat, izip_longest
 
 from .cluster import Cluster, ClusterNode
@@ -13,11 +14,37 @@ class NodeWrapper(object):
         self.master = master
         self.slaves = []
 
+    @classmethod
+    def divide_by_host(cls, nodes, host_num):
+        nodes_per_host = [[] for _ in xrange(host_num)]
+        for n in nodes:
+            nodes_per_host[n.host_index].append(n)
+        return nodes_per_host
+
     def __getattr__(self, attr):
         return getattr(self.node, attr)
 
+    def __repr__(self):
+        if not (hasattr(self.node, 'host') and hasattr(self.node, 'port')):
+            return self.debug_repr()  # for mock node
+        if self.master:
+            return '<NodeWrapper {} -> {}>'.format(self.node.gen_addr(),
+                                                   self.master.gen_addr())
+        else:
+            return '<NodeWrapper {}>'.format(self.node.gen_addr())
+
+    def debug_repr(self):
+        if self.master:
+            return '<NodeWrapper {} -> {}>'.format(self.tag, self.master.tag)
+        else:
+            return '<NodeWrapper {}>'.format(self.tag)
+
 
 class DistributionError(Exception):
+    pass
+
+
+class MissingSlaves(DistributionError):
     def __init__(self, missing):
         self.missing = missing
 
@@ -25,7 +52,31 @@ class DistributionError(Exception):
         return 'not all masters have slaves: {}'.format(self.missing)
 
 
-class MaxFlowSolver(object):
+class InvalidMasterDistribution(DistributionError):
+    pass
+
+
+class MaxFlowBase(object):
+    def __init__(self, host_count):
+        self.vertex_count = 2 * host_count + 2
+        self.s = self.vertex_count - 2
+        self.t = self.vertex_count - 1
+
+    def _gen_graph(self):
+        # make it lazy to support optional addslaves command
+        from igraph import Graph
+        g = Graph().as_directed()
+        g.add_vertices(self.vertex_count)
+        g.es['weight'] = 1  # enable weight
+        return g
+
+    @staticmethod
+    def _sort_masters(masters):
+        for ms in masters:
+            ms.sort(key=lambda m: len(m.slaves))
+
+
+class MaxFlowSolver(MaxFlowBase):
     '''Slaves distribution problem can be converted to max flow problem'''
 
     @classmethod
@@ -51,20 +102,10 @@ class MaxFlowSolver(object):
         for ss in slaves:
             self.slice_tags.append([s.master.tag for s in ss])
 
-        self.vertex_count = 2 * host_count + 2
-        self.s = self.vertex_count - 2
-        self.t = self.vertex_count - 1
+        super(MaxFlowSolver, self).__init__(host_count)
         self.result = []
         self.finished = False
         self.max_slaves_limit = max_slaves_limit
-
-    def _gen_graph(self):
-        # make it lazy to support optional addslaves command
-        from igraph import Graph
-        g = Graph().as_directed()
-        g.add_vertices(self.vertex_count)
-        g.es['weight'] = 1  # enable weight
-        return g
 
     def get_distribution(self):
         return {
@@ -102,7 +143,7 @@ class MaxFlowSolver(object):
         mf = g.maxflow(self.s, self.t, g.es['weight'])
         if mf.value < self.orphans_count:
             missing = self._gen_hosts_missing_slaves(g, mf)
-            raise DistributionError(missing)
+            raise MissingSlaves(missing)
 
         for edge_index, e in enumerate(g.es):
             if e.source == self.s or e.target == self.t:
@@ -153,7 +194,7 @@ class MaxFlowSolver(object):
                 g[i, ct + j] = min(len(self.frees[i]), limit)
         mf = g.maxflow(self.s, self.t, g.es['weight'])
 
-        self._sort_masters()
+        self._sort_masters(self.masters)
         for edge_index, e in enumerate(g.es):
             if e.source == self.s or e.target == self.t:
                 continue
@@ -178,10 +219,6 @@ class MaxFlowSolver(object):
                 max(self.max_slaves_limit - len(m.slaves), 0) \
                 for m in masters))
         return limits
-
-    def _sort_masters(self):
-        for masters in self.masters:
-            masters.sort(key=lambda m: len(m.slaves))
 
 
 def gen_distribution(nodes, new_nodes):
@@ -243,3 +280,108 @@ def print_cluster(distribution):
         for c in line:
             echo(fmt.format(c), color=color_map.get(c[0]) or None, end='')
         print ''
+
+
+class RearrangeSlaveManager(MaxFlowBase):
+    '''Change all masters to have exactly one slave'''
+    def __init__(self, cluster, new_nodes):
+        self.cluster = cluster
+        self.new_nodes = new_nodes
+        self.result = None
+        self.dis = gen_distribution(self.cluster.nodes, self.new_nodes)
+        super(RearrangeSlaveManager, self).__init__(len(self.dis['hosts']))
+
+    def check_masters_distribution():
+        masters_per_host = [len(m) for m in self.dis['masters']]
+        masters_num = list(set(masters_per_host))
+        if len(nodes_num) > 2:
+            raise InvalidMasterDistribution()
+        if len(nodes_num == 2) and abs(nodes_num[0] - nodes_num[1]) > 1:
+            raise InvalidMasterDistribution()
+
+    def gen_distribution(self):
+        return gen_distribution(self.cluster.nodes, self.new_nodes)
+
+    def gen_plan(self):
+        if self.result:
+            return self.result
+
+        add_plan = []
+        delete_plan = []
+        hosts = map(copy, self.dis['hosts'])
+        masters = map(copy, self.dis['masters'])
+        slaves = map(copy, self.dis['slaves'])
+        frees = map(copy, self.dis['frees'])
+        ct = len(hosts)
+        masters_per_host = (len(sum(masters, [])) + ct - 1) / ct
+        limit = 1 + masters_per_host / ct
+
+        # first assume that there is no slave for every master
+        g = self._gen_graph()
+        flow_in = map(len, frees)
+        flow_out = map(len, masters)
+        for i, c in enumerate(flow_in):
+            g[self.s, i] = c
+        for i, c in enumerate(flow_out):
+            g[i + ct, self.t] = c
+        for i in xrange(ct):
+            for j in xrange(ct):
+                if i == j:
+                    continue
+                g[i, ct + j] = min(len(frees[i]), limit, len(masters[j]))
+        mf = g.maxflow(self.s, self.t, g.es['weight'])
+
+        curr_map = self._gen_curr_map()
+        edges = []
+        for edge_index, e in enumerate(g.es):
+            if e.source == self.s or e.target == self.t:
+                continue
+            i, j = e.source, e.target - ct
+            flow = int(mf.flow[edge_index])
+            edges.append((i, j, flow))
+
+        # delete redundant slaves
+        for i, j, flow in edges:
+            if curr_map[i][j] > flow:
+                deleted_num = curr_map[i][j] - flow
+                deleted_slaves = [s for s in slaves[i] \
+                    if s.master.host_index == j][:deleted_num]
+                for s in deleted_slaves:
+                    s.master.slaves.remove(s)
+                delete_plan.extend(deleted_slaves)
+
+        # add new slaves
+        self._sort_masters(masters)
+        for i, j, flow in edges:
+            for _ in xrange(max(0, flow - curr_map[i][j])):
+                m = masters[j].pop(0)
+                if len(m.slaves) > 0:
+                    break
+                f = frees[i].pop(0)
+                m.slaves.append(f)
+                f.master = m
+                add_plan.append({'slave': f, 'master': m})
+
+        self.assert_plan(delete_plan, add_plan)
+        return {
+            'add_plan': add_plan,
+            'delete_plan': delete_plan,
+            'frees': frees
+        }
+
+    def _gen_curr_map(self):
+        hosts_num = len(self.dis['hosts'])
+        curr_graph = [list(repeat(0, hosts_num)) for _ in xrange(hosts_num)]
+        for i, slaves in enumerate(self.dis['slaves']):
+            for s in slaves:
+                curr_graph[i][s.master.host_index] += 1
+        return curr_graph
+
+    def assert_plan(self, delete_plan, add_plan):
+        dis = gen_distribution(self.cluster.nodes, self.new_nodes)
+        slaves = sum(dis['slaves'], [])
+        masters = sum(dis['masters'], [])
+
+        slaves_num = len(slaves) - len(delete_plan) + len(add_plan)
+        if slaves_num != len(masters):
+            raise DistributionError()

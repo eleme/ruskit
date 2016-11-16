@@ -2,7 +2,7 @@ from mock import patch
 
 from ruskit.cluster import ClusterNode, Cluster, ActionStopped
 from ruskit.distribute import MaxFlowSolver, DistributionError
-from test_base import TestCaseBase, MockNewNode
+from test_base import TestCaseBase
 
 
 class TestAddSlaves(TestCaseBase):
