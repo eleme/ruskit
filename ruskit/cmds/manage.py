@@ -162,6 +162,7 @@ def flushall(args):
 @cli.argument("name")
 @cli.argument("value")
 @cli.argument("--config-command", default="config")
+@cli.argument("--rewrite", action="store_true")
 @timeout_argument
 @cli.pass_ctx
 def reconfigure(ctx, args):
@@ -173,6 +174,8 @@ def reconfigure(ctx, args):
         echo("Setting `%s` of `%s` to `%s`" % (args.name, node, args.value))
         node.execute_command(args.config_command + " SET",
                              args.name, args.value)
+        if args.rewrite:
+            node.execute_command(args.config_command + " REWRITE")
 
 
 @cli.command
