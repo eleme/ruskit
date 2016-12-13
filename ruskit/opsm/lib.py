@@ -1,16 +1,14 @@
 # -*- coding: utf-8 -*-
-from __future__ import division, print_function
+from __future__ import division, print_function, absolute_import
 
 from collections import namedtuple
 import sys
 
-TASK_SUCCESS = 30000
-TASK_FAILURE = 30001
+from . import exceptions
+from . import utils
 
 
 class TaskSuccess(namedtuple('TaskSuccess', 'task_name, value')):
-    tid = TASK_SUCCESS
-
     def __py2_str__(self):
         ret = u'{}({}) ✓'.encode('utf8')
         ret = ret.format(self.task_name, self.value)
@@ -39,11 +37,28 @@ class TaskSuccess(namedtuple('TaskSuccess', 'task_name, value')):
         else:
             return self.__py3_repr__()
 
+    def ok(self):
+        return True
 
-class TaskFailure(
-        namedtuple('TaskFailure', 'task_name, error, grdst')):
-    tid = TASK_FAILURE
+    def val(self):
+        return self.value
 
+    def err(self):
+        return None
+
+    def unwrap(self):
+        return self.value
+
+    def aggregate(self):
+        if utils.is_iterable_not_str(self.value):
+            return tuple(v.aggregate() for v in self.value)
+        elif isinstance(self.value, tuple):
+            return self.value
+        else:
+            return (self.value,)
+
+
+class TaskFailure(namedtuple('TaskFailure', 'task_name, error, grdst')):
     def __py2_str__(self):
         if self.grdst:
             ret = u'{}({}) ✗ => {}'.encode('utf8')
@@ -89,13 +104,20 @@ class TaskFailure(
         else:
             return self.__py3_repr__()
 
+    def ok(self):
+        return False
 
-class PreviousTaskFailedError(Exception):
-    def __init__(self, msg='PTF'):
-        self.msg = msg
+    def val(self):
+        return None
 
-    def __str__(self):
-        return self.msg
+    def err(self):
+        return self.error
+
+    def unwrap(self):
+        raise exceptions.OPSMReturnOnErrorShortcutException()
+
+    def aggregate(self):
+        raise exceptions.OPSMReturnOnErrorShortcutException()
 
 
 class Task(object):
@@ -141,8 +163,7 @@ class Task(object):
             else:
                 ret = None
         except Exception as e:
-            ret = TaskFailure(
-                self._task_name, error=e, grdst=None)
+            ret = TaskFailure(self._task_name, error=e, grdst=None)
         return ret
 
     def run(self):
@@ -150,8 +171,7 @@ class Task(object):
             rslt = self._run()
             ret = TaskSuccess(self._task_name, value=rslt)
         except Exception as e:
-            ret = TaskFailure(
-                self._task_name, error=e, grdst=None)
+            ret = TaskFailure(self._task_name, error=e, grdst=None)
             self.ok = False
         finally:
             if self.ok:
@@ -159,9 +179,7 @@ class Task(object):
             else:
                 grdst = self._try_guard()
                 return TaskFailure(
-                    self._task_name,
-                    error=ret.error,
-                    grdst=grdst)
+                    self._task_name, error=ret.error, grdst=grdst)
 
     def _run(self):
         raise NotImplementedError("Should override _run")
@@ -185,15 +203,14 @@ class SequenceTask(Task):
             try:
                 ret = task.run()
             except Exception as e:
-                ret = TaskFailure(
-                    task._task_name, error=e, grdst=None)
-            if ret.tid == TASK_FAILURE:
+                ret = TaskFailure(task._task_name, error=e, grdst=None)
+            if not ret.ok():
                 self.ok = False
             return ret
         else:
             return TaskFailure(
                 task._task_name,
-                error=PreviousTaskFailedError(),
+                error=exceptions.PreviousTaskFailedError(),
                 grdst=None)
 
     def _run(self):
@@ -202,8 +219,7 @@ class SequenceTask(Task):
             return TaskSuccess(self._task_name, value=ret)
         else:
             grdst = self._try_guard()
-            return TaskFailure(
-                self._task_name, error=ret, grdst=grdst)
+            return TaskFailure(self._task_name, error=ret, grdst=grdst)
 
 
 class ParallelTask(Task):
@@ -223,9 +239,8 @@ class ParallelTask(Task):
         try:
             ret = task.run()
         except Exception as e:
-            ret = TaskFailure(
-                task._task_name, error=e, grdst=None)
-        if ret.tid == TASK_FAILURE:
+            ret = TaskFailure(task._task_name, error=e, grdst=None)
+        if not ret.ok():
             self.ok = False
         return ret
 
@@ -235,5 +250,4 @@ class ParallelTask(Task):
             return TaskSuccess(self._task_name, value=ret)
         else:
             grdst = self._try_guard()
-            return TaskFailure(
-                self._task_name, error=ret, grdst=grdst)
+            return TaskFailure(self._task_name, error=ret, grdst=grdst)

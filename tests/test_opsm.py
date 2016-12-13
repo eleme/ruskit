@@ -1,12 +1,12 @@
 from __future__ import absolute_import, print_function
 
+import sys
+import functools
 from six.moves import range
 import contextlib
 import operator
 import random
 from functools import reduce
-
-from pprint import pprint
 
 import gevent
 import gevent.pool
@@ -29,9 +29,8 @@ def global_echo_mock():
     del echo
 
 
-def typical_fail(task_name):
-    return opsm.TaskFailure(
-        task_name=task_name, error=rterr, grdst=None)
+def typical_fail(task_name, grdst=None):
+    return opsm.TaskFailure(task_name=task_name, error=rterr, grdst=grdst)
 
 
 def typical_failclean(task_name, guard_name):
@@ -44,17 +43,22 @@ def typical_failclean(task_name, guard_name):
 
 def previous_fail(task_name):
     return opsm.TaskFailure(
-        task_name=task_name,
-        error=opsm.PreviousTaskFailedError(),
-        grdst=None)
+        task_name=task_name, error=opsm.PreviousTaskFailedError(), grdst=None)
+
+
+def usorted(lst):
+    return sorted(lst, key=lambda e: str(e))
 
 
 def assert_task_result(expect, actual):
+    def is_iterable(obj):
+        return hasattr(obj, '__iter__') and not isinstance(obj, str)
+
     def assert_task_success(expect, actual):
         if expect.task_name != actual.task_name:
             return False
 
-        if hasattr(expect.value, '__iter__'):
+        if is_iterable(expect.value):
             if len(expect.value) != len(actual.value):
                 return False
             return reduce(operator.and_, [
@@ -69,7 +73,7 @@ def assert_task_result(expect, actual):
             return False
 
         check_error = True
-        if hasattr(expect.error, '__iter__'):
+        if is_iterable(expect.error):
             if len(expect.error) != len(actual.error):
                 check_error = False
             check_error = reduce(operator.and_, [
@@ -82,8 +86,8 @@ def assert_task_result(expect, actual):
             check_error = expect.error == actual.error
         assert isinstance(actual.grdst, expect.grdst.__class__)
         if expect.grdst:
-            return check_error and assert_task_result_one(
-                expect.grdst, actual.grdst)
+            return check_error and assert_task_result_one(expect.grdst,
+                                                          actual.grdst)
         else:
             return check_error
 
@@ -135,13 +139,16 @@ class CleanupTask(opsm.Task):
 def test_task_success():
     with global_echo_mock():
         msg = 'hello'
+
+        # Expect
+        ret_expect = opsm.TaskSuccess(task_name='EchoTaskS', value=msg)
+
+        # Actual
         ee = EchoTaskS(msg=msg)
         ret = ee.run()
 
         echo.assert_called_once_with(msg)
-        assert_task_result(
-            opsm.TaskSuccess(
-                task_name='EchoTaskS', value=msg), ret)
+        assert_task_result(ret_expect, ret)
 
 
 def test_task_failure():
@@ -230,9 +237,7 @@ def test_sequence_task_partial_failure_without_guard():
             for i in range(fail_num1 - 1 + succ_num2)
         ]
         ret_expect = opsm.TaskFailure(
-            task_name='SequenceTask',
-            error=ret_expect,
-            grdst=None)
+            task_name='SequenceTask', error=ret_expect, grdst=None)
         mock_calls_expect = [mock.call(i) for i in range(succ_num1)]
 
         # Actuals
@@ -268,7 +273,7 @@ def test_parallel_task_all_success():
             worker.add(EchoTaskP(msg=i))
         ret = worker.run()
 
-        assert sorted(mock_call_expect) == sorted(echo.mock_calls)
+        assert usorted(mock_call_expect) == usorted(echo.mock_calls)
         assert_task_result(ret_expect, ret)
 
 
@@ -285,10 +290,7 @@ def test_parallel_task_partial_failure():
             opsm.TaskSuccess(
                 task_name='EchoTaskP', value=i) for i in range(succ_num1)
         ]
-        ret_expect += [
-            typical_fail('EchoTaskP')
-            for i in range(fail_num1)
-        ]
+        ret_expect += [typical_fail('EchoTaskP') for i in range(fail_num1)]
         ret_expect += [
             opsm.TaskSuccess(
                 task_name='EchoTaskP', value=i) for i in range(succ_num2)
@@ -313,7 +315,7 @@ def test_parallel_task_partial_failure():
             worker.add(EchoTaskP(msg=i))
         ret = worker.run()
 
-        assert sorted(mock_calls_expect) == sorted(echo.mock_calls)
+        assert usorted(mock_calls_expect) == usorted(echo.mock_calls)
         assert_task_result(ret_expect, ret)
 
 
@@ -336,9 +338,7 @@ def test_parallel_task_partial_failure_without_guard():
                 task_name='EchoTaskP', value=i) for i in range(succ_num2)
         ]
         ret_expect = opsm.TaskFailure(
-            task_name='ParallelTask',
-            error=ret_expect,
-            grdst=None)
+            task_name='ParallelTask', error=ret_expect, grdst=None)
         mock_calls_expect = [mock.call(i) for i in range(succ_num1)]
         mock_calls_expect += [mock.call(i) for i in range(succ_num2)]
 
@@ -353,13 +353,30 @@ def test_parallel_task_partial_failure_without_guard():
             worker.add(EchoTaskP(msg=i))
         ret = worker.run()
 
-        assert sorted(mock_calls_expect) == sorted(echo.mock_calls)
+        assert usorted(mock_calls_expect) == usorted(echo.mock_calls)
         assert_task_result(ret_expect, ret)
 
 
-def test_complex_guard_successful():
-    pass
+def test_complex_guard_failure():
+    with global_echo_mock():
+        # Expects
+        grdst = opsm.TaskSuccess(
+            task_name='SequenceTask',
+            value=[
+                opsm.TaskSuccess(
+                    task_name='EchoTaskS', value='complex'), opsm.TaskSuccess(
+                        task_name='EchoTaskS', value='guard')
+            ])
+        ret_expect = typical_fail('EchoTaskS', grdst)
 
+        mock_calls_expect = [mock.call('complex'), mock.call('guard')]
 
-def test_complex_guard_failed():
-    pass
+        # Actuals
+        complex_guard = opsm.SequenceTask()
+        complex_guard.add(EchoTaskS(msg='complex'))
+        complex_guard.add(EchoTaskS(msg='guard'))
+        worker = EchoTaskS(msg=raise_msg, guard=complex_guard)
+        ret = worker.run()
+
+        assert mock_calls_expect == echo.mock_calls
+        assert_task_result(ret_expect, ret)
