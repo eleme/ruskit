@@ -1,7 +1,5 @@
 from __future__ import absolute_import, print_function
 
-import sys
-import functools
 from six.moves import range
 import contextlib
 import operator
@@ -377,6 +375,42 @@ def test_complex_guard_failure():
         complex_guard.add(EchoTaskS(msg='guard'))
         worker = EchoTaskS(msg=raise_msg, guard=complex_guard)
         ret = worker.run()
+
+        assert mock_calls_expect == echo.mock_calls
+        assert_task_result(ret_expect, ret)
+
+
+def test_retry_task():
+    class EchoTaskR(opsm.RetryTask):
+        def _setup(self, *args, **kwargs):
+            self.error_times = kwargs['error_times']
+            self.msg = kwargs['msg']
+
+        def _run(self):
+            if self.error_times > 0:
+                self.error_times -= 1
+                raise rterr
+            else:
+                echo(self.msg)
+                return self.msg
+
+    with global_echo_mock():
+        msg = 'hello'
+        error_times = 2
+        retry_times = 5
+
+        # Expects
+        ret_expect = opsm.TaskSuccess(task_name='EchoTaskR', value=msg)
+        mock_calls_expect = [mock.call('cleanup') for i in range(error_times)]
+        mock_calls_expect.append(mock.call(msg))
+
+        # Actuals
+        retry = EchoTaskR(
+            error_times=error_times,
+            msg=msg,
+            retry_times=retry_times,
+            guard=CleanupTask())
+        ret = retry.run()
 
         assert mock_calls_expect == echo.mock_calls
         assert_task_result(ret_expect, ret)

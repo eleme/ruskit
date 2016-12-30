@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from .lib import Task, SequenceTask, ParallelTask
+from .lib import Task, SequenceTask, ParallelTask, RetryTask
 from .lib import TaskSuccess, TaskFailure
 
 from .exceptions import OPSMReturnOnErrorShortcutException

@@ -251,3 +251,18 @@ class ParallelTask(Task):
         else:
             grdst = self._try_guard()
             return TaskFailure(self._task_name, error=ret, grdst=grdst)
+
+
+class RetryTask(Task):
+    def __init__(self, *args, **kwargs):
+        super(RetryTask, self).__init__(*args, **kwargs)
+        self.retry_times = kwargs.get('retry_times', 1)
+
+    def run(self):
+        for i in range(self.retry_times):
+            # Cleanup self.ok flag
+            self.ok = True
+            ret = super(RetryTask, self).run()
+            if ret.ok():
+                break
+        return ret

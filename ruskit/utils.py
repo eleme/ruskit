@@ -4,6 +4,7 @@ import itertools
 import os
 import sys
 from functools import wraps
+import contextlib
 
 from ruskit import cli
 
@@ -119,3 +120,11 @@ def timeout_argument(func):
         ClusterNode.socket_timeout = args.timeout
         return func(*arguments)
     return _wrapper
+
+
+@contextlib.contextmanager
+def contextlib_suppress(*exceptions):
+    try:
+        yield
+    except exceptions:
+        pass
