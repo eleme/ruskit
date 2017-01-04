@@ -180,6 +180,18 @@ def reconfigure(ctx, args):
 
 @cli.command
 @cli.argument("cluster")
+@cli.argument("command", nargs='+')
+@timeout_argument
+@cli.pass_ctx
+def cmd(ctx, args):
+    cluster = Cluster.from_node(ClusterNode.from_uri(args.cluster))
+    command = args.command
+    for n in cluster.nodes:
+        print n.execute_command(*command)
+
+
+@cli.command
+@cli.argument("cluster")
 @timeout_argument
 @cli.pass_ctx
 def peek(ctx, args):
