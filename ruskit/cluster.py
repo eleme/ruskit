@@ -370,6 +370,9 @@ class Cluster(object):
                 self.migrate(src, n["node"], count)
 
     def delete_node(self, node):
+        node.flush_cache()
+        self.flush_all_cache()
+
         if node.is_master():
             self.migrate_node(node)
 
