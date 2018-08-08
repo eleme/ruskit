@@ -20,7 +20,7 @@ setup(
     },
     install_requires=[
         "hiredis",
-        "redis>=2.10.5",
+        "redis==2.10.5",
     ],
     extras_require={
         'addslaves': ['python-igraph'],
