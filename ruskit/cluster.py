@@ -229,7 +229,7 @@ class ClusterNode(object):
             confs = item.split()
             node_info = {
                 "name": confs[0],
-                "addr": confs[1],
+                "addr": confs[1].split("@")[0],
                 "flags": confs[2].split(','),
                 "replicate": confs[3],  # master_id
                 "ping_sent": int(confs[4]),
