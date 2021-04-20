@@ -5,5 +5,5 @@ pbr==1.10.0
 python-igraph==0.7.1.post6
 redis==2.10.5
 six==1.10.0
-py==1.4.31
+py==1.10.0
 pytest==2.9.2
